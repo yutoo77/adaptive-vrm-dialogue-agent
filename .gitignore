@@ -1,0 +1,13 @@
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+frontend/*.log
+frontend/public/models/private/*
+!frontend/public/models/private/.gitignore
+*.vrm
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/
