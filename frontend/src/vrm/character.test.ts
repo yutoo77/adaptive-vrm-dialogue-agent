@@ -1,21 +1,40 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CHARACTER_STATES,
   DEFAULT_CAMERA_SETTINGS,
+  PERFORMANCE_PREVIEW_INTENSITIES,
+  createPerformancePreviewPlan,
+  isPerformancePlan,
   isCharacterState,
+  performanceEmotionToState,
+  resolveReducedMotion,
   type CharacterStatePreset,
 } from "../types/character";
 import { clampCameraSettings } from "../utils/math";
-import { CharacterController } from "./CharacterController";
+import { VRMHumanBoneName } from "@pixiv/three-vrm";
+
+import { CharacterController, NEUTRAL_UPPER_ARM_ROLLS } from "./CharacterController";
 import { CHARACTER_STATE_PRESETS, getCharacterStatePreset } from "./CharacterStatePresets";
 import { IdleMotionController } from "./IdleMotionController";
-import { resolveBlinkExpressions, resolveExpressionCandidate, resolveStateExpression } from "./expressionMapping";
+import { PerformanceMotionController } from "./PerformanceMotionController";
+import {
+  performanceLingerMs,
+  PerformanceTimelineController,
+  snapPerformanceCueTimeMs,
+} from "./PerformanceTimelineController";
+import {
+  resolveBlinkExpressions,
+  resolveExpressionCandidate,
+  resolveLipSyncExpression,
+  resolveLipSyncExpressions,
+  resolveStateExpression,
+} from "./expressionMapping";
 
 describe("character state", () => {
   it("accepts only the defined state names", () => {
     CHARACTER_STATES.forEach((state) => expect(isCharacterState(state)).toBe(true));
-    expect(isCharacterState("speaking")).toBe(false);
+    expect(isCharacterState("speaking")).toBe(true);
     expect(isCharacterState(null)).toBe(false);
   });
 
@@ -28,6 +47,12 @@ describe("character state", () => {
     });
   });
 
+  it("falls back to idle if hot reload temporarily exposes a stale state", () => {
+    expect(getCharacterStatePreset("future-state" as CharacterStatePreset["state"])).toBe(
+      CHARACTER_STATE_PRESETS.idle,
+    );
+  });
+
   it("keeps state transitions centralized and rejects unknown external values", () => {
     const changes: string[] = [];
     const controller = new CharacterController({ onStateChange: (state) => changes.push(state) });
@@ -37,6 +62,57 @@ describe("character state", () => {
     expect(changes).toEqual(["thinking"]);
     expect(controller.setStateFromUnknown("unsupported")).toBe(false);
     expect(controller.getState()).toBe("thinking");
+  });
+
+  it("maps only bounded performance emotions to existing character states", () => {
+    expect(performanceEmotionToState("neutral")).toBe("explaining");
+    expect(performanceEmotionToState("happy")).toBe("happy");
+    expect(
+      isPerformancePlan({
+        emotion: "happy",
+        intensity: 0.6,
+        gesture: "small_nod",
+        voice_style: "bright",
+        cues: [],
+      }),
+    ).toBe(true);
+    expect(
+      isPerformancePlan({
+        emotion: "angry",
+        intensity: 2,
+        gesture: "arbitrary_command",
+        voice_style: "bright",
+        cues: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("creates bounded developer previews at the three documented strengths", () => {
+    expect(PERFORMANCE_PREVIEW_INTENSITIES).toEqual({ weak: 0.3, medium: 0.6, strong: 0.9 });
+    expect(createPerformancePreviewPlan("happy", "soft_bounce", 0.9)).toEqual({
+      emotion: "happy",
+      intensity: 0.9,
+      gesture: "soft_bounce",
+      voice_style: "bright",
+      cues: [],
+    });
+    expect(createPerformancePreviewPlan("cautious", "small_nod", 9).intensity).toBe(1);
+  });
+
+  it("keeps system reduced-motion as the default while allowing temporary developer comparison", () => {
+    expect(resolveReducedMotion("system", true)).toBe(true);
+    expect(resolveReducedMotion("system", false)).toBe(false);
+    expect(resolveReducedMotion("normal", true)).toBe(false);
+    expect(resolveReducedMotion("reduced", false)).toBe(true);
+  });
+
+  it("uses a mirrored neutral arm pose instead of leaving VRM 1.0 models in a T-pose", () => {
+    const left = NEUTRAL_UPPER_ARM_ROLLS[VRMHumanBoneName.LeftUpperArm];
+    const right = NEUTRAL_UPPER_ARM_ROLLS[VRMHumanBoneName.RightUpperArm];
+
+    expect(left).toBeCloseTo(-right);
+    expect(left).toBeLessThan(-Math.PI / 3);
+    expect(left).toBeGreaterThan(-Math.PI / 2);
   });
 });
 
@@ -62,6 +138,18 @@ describe("expression mapping", () => {
     expect(resolveBlinkExpressions(["blink", "happy"])).toEqual(["blink"]);
     expect(resolveBlinkExpressions(["BlinkLeft", "BlinkRight"])).toEqual(["BlinkLeft", "BlinkRight"]);
     expect(resolveBlinkExpressions(["neutral"])).toEqual([]);
+  });
+
+  it("selects a case-preserving mouth expression for lip sync", () => {
+    expect(resolveLipSyncExpression(["neutral", "AA", "ih"])).toBe("AA");
+    expect(resolveLipSyncExpression(["neutral"])).toBeNull();
+    expect(resolveLipSyncExpressions(["AA", "ih", "ou", "ee", "oh"])).toEqual({
+      a: "AA",
+      i: "ih",
+      u: "ou",
+      e: "ee",
+      o: "oh",
+    });
   });
 });
 
@@ -96,5 +184,116 @@ describe("idle motion", () => {
     const reducedFrame = reduced.update(0.8, idlePreset.motion);
     expect(Math.abs(reducedFrame.breathOffset)).toBeLessThan(Math.abs(normalFrame.breathOffset));
     expect(Math.abs(reducedFrame.swayAngle)).toBeLessThan(Math.abs(normalFrame.swayAngle));
+  });
+});
+
+describe("performance motion", () => {
+  it("plays a one-shot nod and returns to a neutral overlay", () => {
+    const controller = new PerformanceMotionController();
+    controller.start("small_nod", 0.8);
+
+    const moving = controller.update(0.2);
+    controller.update(1);
+    const finished = controller.update(0.1);
+
+    expect(Math.abs(moving.headPitchOffset)).toBeGreaterThan(0);
+    expect(finished).toEqual({ headPitchOffset: 0, headRollOffset: 0, rootOffset: 0 });
+  });
+
+  it("reduces gesture amplitude for reduced-motion users", () => {
+    const normal = new PerformanceMotionController();
+    const reduced = new PerformanceMotionController();
+    normal.start("head_tilt", 1);
+    reduced.start("head_tilt", 1);
+    reduced.setReducedMotion(true);
+
+    expect(Math.abs(reduced.update(0.4).headRollOffset)).toBeLessThan(
+      Math.abs(normal.update(0.4).headRollOffset),
+    );
+  });
+});
+
+describe("performance timeline", () => {
+  const plan = {
+    emotion: "happy",
+    intensity: 0.6,
+    gesture: "small_nod",
+    voice_style: "bright",
+    cues: [
+      { at: 0.3, gesture: "small_nod", intensity: 0.4 },
+      { at: 0.65, gesture: "head_tilt", intensity: 0.35 },
+    ],
+  } as const;
+
+  it("prepares the expression first and starts the one-shot gesture only when audio starts", () => {
+    const preparePerformance = vi.fn();
+    const playGesture = vi.fn();
+    const returnToIdle = vi.fn();
+    const timeline = new PerformanceTimelineController({ preparePerformance, playGesture, returnToIdle });
+
+    timeline.prepare(plan);
+    expect(preparePerformance).toHaveBeenCalledOnce();
+    expect(playGesture).not.toHaveBeenCalled();
+
+    timeline.handlePlayback({ type: "started", durationMs: 4_000, phraseBoundariesMs: [] });
+    expect(preparePerformance).toHaveBeenCalledTimes(2);
+    expect(playGesture).toHaveBeenCalledWith("small_nod", 0.6);
+    expect(returnToIdle).not.toHaveBeenCalled();
+  });
+
+  it("keeps a short post-speech linger and returns immediately for stop or failure", () => {
+    vi.useFakeTimers();
+    try {
+      const returnToIdle = vi.fn();
+      const timeline = new PerformanceTimelineController({
+        preparePerformance: vi.fn(),
+        playGesture: vi.fn(),
+        returnToIdle,
+      });
+      timeline.prepare(plan);
+      timeline.handlePlayback({ type: "completed" });
+      vi.advanceTimersByTime(performanceLingerMs(plan) - 1);
+      expect(returnToIdle).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(returnToIdle).toHaveBeenCalledOnce();
+
+      timeline.handlePlayback({ type: "stopped" });
+      timeline.handlePlayback({ type: "failed" });
+      expect(returnToIdle).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("plays bounded mid-speech cues from audio duration and cancels pending cues on stop", () => {
+    vi.useFakeTimers();
+    try {
+      const playGesture = vi.fn();
+      const reportPhase = vi.fn();
+      const timeline = new PerformanceTimelineController({
+        preparePerformance: vi.fn(),
+        playGesture,
+        returnToIdle: vi.fn(),
+        reportPhase,
+      });
+      timeline.prepare(plan);
+      timeline.handlePlayback({ type: "started", durationMs: 4_000, phraseBoundariesMs: [] });
+      expect(playGesture).toHaveBeenLastCalledWith("small_nod", 0.6);
+
+      vi.advanceTimersByTime(1_200);
+      expect(playGesture).toHaveBeenLastCalledWith("small_nod", 0.4);
+      expect(reportPhase).toHaveBeenLastCalledWith("cue", 1, 2);
+
+      timeline.handlePlayback({ type: "stopped" });
+      vi.advanceTimersByTime(4_000);
+      expect(playGesture).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("snaps a cue to a nearby VOICEVOX phrase boundary but ignores distant boundaries", () => {
+    expect(snapPerformanceCueTimeMs(2_400, 4_000, [1_200, 2_550])).toBe(2_550);
+    expect(snapPerformanceCueTimeMs(2_400, 4_000, [900])).toBe(2_400);
   });
 });

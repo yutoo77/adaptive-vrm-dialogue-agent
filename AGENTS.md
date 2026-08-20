@@ -1,21 +1,28 @@
 # AGENTS.md
 
-## 方針
+## Engineering guardrails
 
-- v0.1はVRM表示・待機動作・手動状態制御に限定する。
-- Ollama、VOICEVOX、音声認識、RAG、外部API接続を追加しない。
-- UI文言は日本語を基本とする。
-- VRMモデル本体、ライセンス未確認素材、秘密情報をGitへ追加しない。
-- 実行時ライブラリはnpmで固定し、外部CDNへ依存しない。
-- モデル差異による欠損は警告に留め、表情やLookAtがなくても画面を壊さない。
+- Treat this repository as a public personal-development and job-portfolio project. Do not add research data, private records, personal recordings, or unrelated internal material.
+- Preserve the local-first default: Mock dialogue must work without an API key or external AI request.
+- Keep secrets in Backend environment variables. Never add API keys to Frontend code or `VITE_` variables.
+- Do not commit VRM files, `.env` files, SQLite data, runtime logs, generated audio, virtual environments, `node_modules`, or build output.
+- Keep normal conversations in RAM. Persist only content the user explicitly registers as long-term memory.
+- Treat model and voice licenses as separate from the source-code license; update the relevant record before publishing a new asset.
+- Accept only bounded, validated Avatar states and performance plans. Do not execute arbitrary bone commands, scripts, or remote animations from a Provider response.
+- Keep Text input available when Voice input/output fails, and do not request microphone access before a user action.
+- Add one major capability at a time and define its success, failure, fallback, cost, and evaluation before widening scope.
+- Keep README, Architecture, Demo, and evaluation claims aligned with the implementation. Do not describe planned Agent, RAG, Vision, or deployment features as complete.
 
-## 完了確認
+## Required checks
 
-`frontend`で以下を実行する。
+Run from the repository root:
 
-- `npm run typecheck`
-- `npm run lint`
-- `npm test`
-- `npm run build`
+```powershell
+.\.venv\Scripts\python -m ruff check backend
+.\.venv\Scripts\python -m pytest backend\tests
+.\.venv\Scripts\python -m pip check
+cd frontend
+npm run check
+```
 
-VRM実モデルがない場合は、モデルなし表示とファイル選択UIまでをブラウザ確認し、実モデル確認は手動項目として残す。
+For a release review, also run `npm audit`, `pip-audit`, a secret scan, and the documented browser demo. Stage, commit, push, and visibility changes remain separate GitHub operations.

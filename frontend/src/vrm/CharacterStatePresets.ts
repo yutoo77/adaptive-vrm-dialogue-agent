@@ -54,6 +54,17 @@ export const CHARACTER_STATE_PRESETS: Readonly<Record<CharacterState, CharacterS
     gaze: { mode: "center", pointerInfluence: 0.12, offsetX: 0, offsetY: 0 },
     motion: { speed: 1.08, breath: 0.85, sway: 0.7, bounce: 0.08, blink: 0.92 },
   },
+  speaking: {
+    state: "speaking",
+    label: "話しています",
+    shortLabel: "発話",
+    message: "音声に合わせて正面を見て話しています",
+    tone: "teal",
+    expressions: [{ name: "neutral", weight: 1 }],
+    posture: { headPitch: 0, headYaw: 0, headRoll: 0, neckPitch: 0, chestPitch: -0.015, chestRoll: 0 },
+    gaze: { mode: "center", pointerInfluence: 0.1, offsetX: 0, offsetY: 0 },
+    motion: { speed: 1.12, breath: 0.9, sway: 0.76, bounce: 0.1, blink: 0.94 },
+  },
   happy: {
     state: "happy",
     label: "うれしい",
@@ -144,5 +155,5 @@ export const CHARACTER_STATE_PRESETS: Readonly<Record<CharacterState, CharacterS
 };
 
 export function getCharacterStatePreset(state: CharacterState): CharacterStatePreset {
-  return CHARACTER_STATE_PRESETS[state];
+  return CHARACTER_STATE_PRESETS[state] ?? CHARACTER_STATE_PRESETS.idle;
 }

@@ -1,158 +1,349 @@
 # Adaptive Character Lab
 
-表情・視線・姿勢・待機動作を状態ごとに切り替えられる、ローカルVRMキャラクタービューアーです。最終的には、利用者の発話や対話状況に応じて応答方針、声、表情、動きを変えるAIキャラクターを目指します。
+[![CI](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Local first](https://img.shields.io/badge/default-local--first-168b8a)](#privacyと外部通信)
 
-現在は **v0.1** です。対話AIや音声機能ではなく、将来それらを接続するためのキャラクター表示・制御レイヤーを実装しています。
+Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声・表情・口形・しぐさを変える、ローカル優先の対話Applicationです。
 
-## v0.1でできること
+このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
 
-- VRM 1.0を主対象としたモデル表示（VRM 0.xも互換補正を試行）
-- 既定パス、ファイル選択、ドラッグ＆ドロップでの読み込み
-- モデルがなくても確認できる3Dプレースホルダー
-- Bounding Boxを使った胸上優先の自動カメラ調整
-- 自動瞬き、呼吸、微小な揺れ、控えめなマウス視線追従
-- 10種類の状態を手動切り替え
-- Expression不足時の安全なフォールバック
-- Expressionの手動テスト
-- カメラ距離、高さ、注視点、モデル位置、倍率の調整
-- モデル情報、Expression、主要ボーン、FPS、読み込み時間、警告の表示
-- `prefers-reduced-motion`による動きの抑制
+![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
-## 技術構成
+> Screenshot: AvatarSample_A © pixiv Inc. / pixiv VRoid Project。モデル本体はRepositoryへ含めていません。背景の円窓、格子、水紋、光はCSSとThree.jsで制作した本Project固有のStageです。
 
-- Vite
-- TypeScript
-- Three.js / WebGLRenderer
-- `@pixiv/three-vrm`
-- Vitest
-- ESLint
+## 解決したい課題
 
-Reactやバックエンドはv0.1では使用していません。ライブラリはnpmで管理し、実行時に外部CDNを読み込みません。
+音声、LLM、Avatarを単純につなぐだけでは、待ち時間や失敗箇所が分からず、誤認識した文がそのまま送信され、どのDataが保存・外部送信されるのかも曖昧になりがちです。
 
-## 必要なもの
+Adaptive Character Labでは、次の方針でこの問題を扱います。
 
-- Node.js 20.19以上、22.12以上、または24以上
-- npm
-- WebGLが有効なPCブラウザ
-- 利用条件を自分で確認したVRMモデル（任意）
+- Avatarの状態と短い表示で、処理中か復帰可能かを伝える。
+- 音声認識結果は自動送信せず、利用者が確認・修正できるDraftへ戻す。
+- VOICEVOXが停止してもText回答を残し、対話全体を止めない。
+- 通常会話を永続保存せず、明示登録した長期記憶だけを確認・編集・削除できるようにする。
+- 自動演技へ自由なBone命令やScriptを渡さず、許可した感情・しぐさ・強度だけをSchemaで受け付ける。
+- 既定のMock Providerでは料金も外部AIへの送信も発生させない。
 
-## セットアップ
+想定利用者は、Windows PC上で技術学習・相談・考えの整理に使う日本語話者です。現在は単一利用者のローカルApplicationであり、公開Web Serviceではありません。
 
-PowerShellまたはコマンドプロンプトで次を実行します。
+## Demoで確認できること
 
-```powershell
-cd adaptive-vrm-dialogue-agent\frontend
-npm install
+最短の確認は、起動後に `何ができるの？` と送ることです。
+
+1. Avatarが`thinking`へ移る。
+2. BackendがTextと制限付き`PerformancePlan`を返す。
+3. 返答内容に応じた感情・強度・しぐさが表示される。
+4. VOICEVOXが利用可能なら音声を再生し、5母音の口形を同期する。
+5. 途中Gestureと短い余韻の後、`idle`へ復帰する。
+
+3分版と1分版の説明順、失敗時の復帰手順は[Demo Guide](docs/DEMO.md)にまとめています。
+
+## 主な機能
+
+| 領域 | 実装内容 |
+| --- | --- |
+| 対話 | Text入力、Mock/OpenAI Provider切替、Timeout、Request ID、Frontend/Backend双方の応答検証 |
+| Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認 |
+| Voice output | ローカルVOICEVOX、接続確認、自動再生、停止、再再生、Text回答を残すFallback |
+| Lip Sync | VOICEVOX母音Timingを`aa / ih / ou / ee / oh`へ同期し、音量Envelopeで開口量を調整 |
+| Avatar | VRM 1.0中心の読込、表情・姿勢・視線、瞬き・呼吸、モデル差異のFallback、3D Placeholder |
+| Adaptive Performance | 感情6種、Gesture 4種、Voice Style 5種、強度0〜1、途中Cue最大2件の制限付きPlan |
+| Memory | Session別直近10往復、決定的要約、明示登録だけのSQLite長期記憶、CRUD、文字重なり検索 |
+| Visual identity | 深藍・白練・藤色を軸にしたCode-native Stage、状態連動の環境光、外部画像Assetなし |
+| Accessibility / UX | `prefers-reduced-motion`対応、演技強度3段階、Keyboard focus、文脈に応じた状態表示、段階的開示 |
+| Observability | 認識・応答・音声準備の直近時間、Backend Request ID、Providerと失敗CodeのLog |
+
+Toolを選んで実行するAgent、RAG、Vision、Streaming応答、Internet公開はまだ実装していません。`PerformancePlan`が制限付きであることと、Tool-using Agentが完成していることは別です。
+
+## 技術的なポイント
+
+### 1. 一往復を最後までつなぐVertical Slice
+
+Text/Voice入力からBackend、応答、音声、Lip Sync、表情、Gesture、停止・復帰までを独立したDemoの寄せ集めにせず、一つの状態遷移として接続しています。音声生成に失敗してもText対話は成功として残ります。
+
+### 2. 自由命令を渡さない自動演技
+
+Providerが返せる演技はPydantic/TypeScript Schemaで制限しています。任意のBone名、角度、Script、Animation URLは受け付けません。Frontendでも値を再検証し、Model差異や不正応答を安全にFallbackします。
+
+### 3. 実音声時間に合わせる演技とLip Sync
+
+VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、実際のWAV長へScaleします。口形は5母音、途中Gestureは近い句境界へ同期します。Timingが欠ける場合は音量ベースの単一口形へ戻ります。
+
+### 4. 明示型MemoryとData境界
+
+通常会話はRAMだけに保持します。長期記憶は「覚えておいて：...」または管理UIから追加した項目だけをSQLiteへ保存し、内容の確認、編集、個別削除、全削除を提供します。Embeddingを使わないため無料・Localですが、言い換えに弱いことも制約として明示しています。
+
+### 5. Local-firstとProvider境界
+
+既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。VOICEVOX接続先もLoopback HTTPだけを許可します。
+
+### 6. 会話を主役にする情報設計
+
+初期画面にはAvatar、会話履歴、入力だけを常時表示し、音声、記憶、演技調整、診断情報は必要なときに開く段階的開示へ整理しています。待機中の正常状態は繰り返し表示せず、処理中・失敗・利用者の判断が必要な状態だけを会話の近くへ出します。Nielsenの「システム状態の可視化」「利用者による制御」「不要情報を減らす」を判断基準として、Mobileでも入力欄が初期Viewport内に残ることをBrowser testで固定しています。
+
+### 7. Assetに依存しないVisual identity
+
+Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材ではなくCSSのGradient、Border、Mask、Animationで描画しています。深藍・白練・藤色を基調にし、`CharacterState`を反映した`data-state`だけで、聞き取り時は青磁、思考時は藤色、発話時は水紋へ控えめな変化を加えます。環境演出は`prefers-reduced-motion`で停止し、Avatar制御や対話処理とは分離しています。
+
+## システム構成
+
+```mermaid
+flowchart LR
+    User["User\nText / Push-to-Talk"] --> UI["Vanilla TypeScript UI"]
+    UI --> Dialogue["DialogueController"]
+    Dialogue --> API["FastAPI"]
+    API <--> Session["Session Memory\nRAM + summary"]
+    API <--> SQLite["Explicit Memory\nSQLite"]
+    API --> Provider{"Provider"}
+    Provider --> Mock["Mock\nlocal / free"]
+    Provider --> OpenAI["OpenAI\nopt-in"]
+    Provider --> Plan["Bounded\nPerformancePlan"]
+
+    UI --> PTT["MediaRecorder + VAD"]
+    PTT --> Whisper["faster-whisper\nlocal CPU"]
+
+    API --> Voicevox["VOICEVOX\nlocalhost"]
+    Voicevox --> Timing["WAV + vowel / phrase timing"]
+    Timing --> Avatar["Three.js + VRM\nvoice / face / gesture"]
+    Plan --> Avatar
+    Dialogue --> Avatar
 ```
 
-## 起動方法
+詳しい責務、Data flow、失敗時の挙動、採用しなかった構成は[ARCHITECTURE.md](ARCHITECTURE.md)にあります。
+
+## 使用技術
+
+| Layer | Technology | 選定理由 |
+| --- | --- | --- |
+| Frontend | TypeScript 6, Vite 8, vanilla DOM | 単一画面でFramework追加による複雑さを増やさず、型検査と責務分離を保つため |
+| 3D / Avatar | Three.js, `@pixiv/three-vrm` | WebGLでVRM 1.0とMToonを扱い、Model差異を吸収するため |
+| Backend | Python 3.12, FastAPI, Uvicorn | SecretをBrowserから分離し、Pydanticで入出力を検証するため |
+| Dialogue | Local Mock / OpenAI Responses API | 無料で再現できる経路と、交換可能な実Providerを分離するため |
+| Speech input | MediaRecorder, Web Audio API, faster-whisper | 利用者操作後だけ録音し、認識音声を外部Serviceへ送らないため |
+| Speech output | VOICEVOX, HTTPX | 無料のLocal TTSをBackend境界越しに利用するため |
+| Storage | RAM, SQLite | 通常会話と明示長期記憶の保存範囲を分けるため |
+| Quality | Vitest, Playwright, ESLint, Pytest, Ruff, pip-audit, Gitleaks, GitHub Actions | 型・規約・Unit/API/Browser挙動・依存脆弱性・Secret・Clean環境を継続確認するため |
+
+Runtimeで外部CDNは使いません。Frontendは`package-lock.json`、Backendは固定した直接依存から復元します。
+
+## Quick Start
+
+### 対応環境
+
+- Windows 10/11（主な動作確認環境）
+- Node.js 22 LTS推奨（20.19以上、22.12以上、または24以上）
+- Python 3.12 64-bit
+- WebGLとMicrophone APIに対応するPC Browser
+
+VOICEVOX、VRM、OpenAI API Keyは最小起動には不要です。これらがなくてもMock対話と3D Placeholderを確認できます。
+
+### 1. 依存関係を準備
+
+PowerShellでRepository直下から実行します。
 
 ```powershell
-npm run dev
+.\setup.ps1
 ```
 
-表示された `http://127.0.0.1:5173/` をブラウザで開きます。Windowsでは、プロジェクト直下の `start_viewer.cmd` をダブルクリックしても起動できます。
+自動Test用の依存も入れる場合:
 
-## VRMモデルを既定パスへ配置する
+```powershell
+.\setup.ps1 -Development
+```
 
-1. モデルの配布ページと最新の利用規約を確認する。
-2. `docs/model-license-record.md`へ確認結果を記録する。
-3. VRMファイルを次の名前で配置する。
+`-Development`はPlaywright用Chromiumも取得します。初回は約310MiBの追加Downloadがあり、Browser本体はRepositoryへ入りません。
+
+Push-to-Talk用の`small` Modelも事前取得する場合は`-PrepareTranscriptionModel`を追加します。初回取得は約464MiBのNetwork通信とDisk容量を使います。
+
+手動で準備する場合:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python -m pip install -r backend\requirements-dev.txt
+cd frontend
+npm ci
+cd ..
+```
+
+### 2. 起動
+
+```powershell
+.\start_demo.ps1
+```
+
+表示された <http://127.0.0.1:5173/> を開きます。`start_demo.cmd`のダブルクリックでも起動できます。停止は起動したTerminalで`Ctrl+C`です。
+
+起動ScriptはBackendとFrontendを一緒に管理します。既に同じApplicationが正常起動していればURLを案内し、Backendだけ残っていれば本人確認できたProcessだけを再利用します。別ApplicationがPort 8000/5173を使用中の場合は自動終了せず、PIDを表示します。
+
+## Optional Setup
+
+### VRMモデル
+
+利用条件を確認した`.vrm`を画面へDrag & Dropするか、次へ配置します。
 
 ```text
 frontend/public/models/private/character.vrm
 ```
 
-4. 開発サーバーを再起動または画面を再読み込みする。
+このPathと`*.vrm`はGit除外され、production buildにもコピーされません。現在の検証Modelは`AvatarSample_A`ですが、本体はRepositoryへ含めていません。条件記録は[docs/model-license-record.md](docs/model-license-record.md)を参照してください。
 
-このディレクトリと`*.vrm`はGitの除外対象です。モデル本体はリポジトリや公開ビルドへ含めないでください。
+### VOICEVOX音声出力
 
-## ブラウザからVRMを選択する
-
-右側の「VRMファイルを選択」を押すか、表示領域へ`.vrm`ファイルをドロップします。Object URLを使ってブラウザ内で読み込み、モデルファイルを外部サーバーへ送信しません。読み込み完了後はObject URLを解放します。
-
-## ライセンス確認について
-
-Aoシリーズを含め、モデル名や作者名だけから利用条件を判断しないでください。研究発表、動画、配信、公開デモ、改変、商用利用、クレジット、再配布がそれぞれ別条件の場合があります。
-
-このアプリはモデルのライセンス可否を自動判定しません。`docs/model-license-record.md`は確認結果を残すためのテンプレートです。
-
-## 状態の切り替え
-
-画面右側から以下を選択できます。
-
-- `idle` — 待機
-- `listening` — 聞く
-- `thinking` — 考える
-- `explaining` — 説明
-- `happy` — 笑顔
-- `gentle` — やさしく
-- `curious` — 興味
-- `cautious` — 慎重
-- `confused` — 困惑・聞き返し
-- `error` — 操作確認が必要な状態
-
-コードからは次のように変更できます。
-
-```ts
-characterController.setState("thinking");
-```
-
-将来の対話層は、受け取った`character_state`を検証したうえで、この入口だけを呼び出します。
-
-## モデルが表示されない場合
-
-1. ファイル名が`.vrm`であることを確認する。
-2. 既定パスを使う場合は、`frontend/public/models/private/character.vrm`に配置したか確認する。
-3. `file://`でHTMLを直接開かず、`npm run dev`で起動する。
-4. ブラウザでWebGL・ハードウェアアクセラレーションが有効か確認する。
-5. 200MBを超えるモデル、破損モデル、対応外拡張を確認する。
-6. 「開発者情報」を開き、Expression、ボーン、警告を確認する。
-7. 別モデルで読み込めるか比較する。
-
-ExpressionやLookAtが不足しているだけなら、アプリは姿勢制御へフォールバックして表示を続けます。
-
-## テストとビルド
-
-`frontend`で実行します。
+1. [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)からApplicationまたはEngineを取得する。
+2. VOICEVOXを起動し、<http://127.0.0.1:50021/docs>を確認する。
+3. 使用するStyle IDを`GET /speakers`で確認する。
+4. 必要なら起動前に環境変数を設定する。
 
 ```powershell
-npm run typecheck
-npm run lint
-npm test
-npm run build
+$env:VOICEVOX_SPEAKER_ID = "14"
+.\start_demo.ps1
 ```
 
-production buildの確認:
+既定は冥鳴ひまり（ノーマル / ID 14）です。公開した生成音声には`VOICEVOX:冥鳴ひまり`のクレジットが必要です。VOICEVOXが停止している場合もText対話は利用できます。
+
+### Push-to-Talk音声入力
+
+事前にModelを準備する場合:
 
 ```powershell
-npm run preview
+cd backend
+..\.venv\Scripts\python -m scripts.prepare_transcription_model
+```
+
+録音はMicrophone Buttonを押した時だけ始まります。最大15秒、4MiBまでです。認識結果は入力欄へ戻るだけで、自動送信しません。マイク名はPermission取得前に表示されないことがあります。
+
+### OpenAI Provider
+
+既定はMockです。実APIを使う場合だけ、同じPowerShellで環境変数を設定します。
+
+```powershell
+$env:DIALOGUE_PROVIDER = "openai"
+$env:OPENAI_API_KEY = "自分のAPIキー"
+$env:OPENAI_MODEL = "gpt-5.6-luna"
+.\start_demo.ps1
+```
+
+KeyはBackendだけが読みます。`VITE_`で始まる環境変数、README、Screenshot、Chat、GitへKeyを入れないでください。OpenAI Providerでは入力、直近履歴、Session要約、関連すると判定した長期記憶最大3件が外部送信対象になります。API利用料金が発生します。
+
+設定名は[backend/.env.example](backend/.env.example)で確認できます。Applicationは`.env`を自動読込しません。
+
+## Privacyと外部通信
+
+| 機能 | 既定 | 送信・保存 |
+| --- | --- | --- |
+| Mock dialogue | 有効 | BrowserとLocal Backend内。通常会話はRAMのみ |
+| OpenAI dialogue | 無効 | 明示設定時だけText文脈をOpenAI APIへ送信 |
+| VOICEVOX | 任意 | Textを`127.0.0.1`のEngineへ送信。WAVをRepositoryへ保存しない |
+| Push-to-Talk | 任意 | 音声をLoopback Backendへ送り、Local faster-whisperで認識。録音を保存しない |
+| VRM | 任意 | Browser内で読込。外部Uploadしない |
+| Long-term memory | 明示操作のみ | `backend/.local/memory.sqlite3`へ最大200件。暗号化なし |
+
+このBackendには認証、Rate Limit、TLS、複数利用者分離がありません。PortをInternetへ公開しないでください。詳細は[SECURITY.md](SECURITY.md)を参照してください。
+
+## Test / Quality
+
+Backend:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend
+.\.venv\Scripts\python -m pytest backend\tests
+.\.venv\Scripts\python -m pip check
+.\.venv\Scripts\python -m pip_audit -r backend\requirements.txt
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm run check
+npm run test:e2e
+npm audit
+```
+
+`npm run test:e2e`はMock固定のBackendとFrontendを必要に応じて自動起動し、Chromiumで対話一往復、詳細設定の段階的開示、Mobile初期Viewportと横Overflowを確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
+
+2026-08-20時点の確認結果:
+
+- Frontend: TypeScript、ESLint、Vitest **60件**、Playwright browser smoke **3件**、production build成功
+- Backend: Ruff、Pytest **45件**、`pip check`成功
+- Dependency audit: npm **0件**、pip-audit **0件**の既知脆弱性
+- Browser: Desktop、390px幅、319px幅、実VRM、Mock対話、VOICEVOX、5母音Lip Sync、自動演技を確認
+- Browser console: warning/error **0件**
+- 実VOICEVOX固定10件: 合成・Timing検証 **10/10**
+- 自動演技固定10文: Schema/期待分類 **10/10**
+
+固定Scenarioの成功は未知入力への一般化を保証しません。成功例だけでなく、否定表現・複合感情・Timing欠損・Stop/Failureを評価記録に残しています。
+
+GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実行します。Clean install後、Mock対話、詳細設定の開閉、Mobile初期Viewportと横OverflowをHeadless Chromiumでも再現します。
+
+## Evaluation
+
+- [Voice output / 10回連続合成](docs/evaluations/voice-output-2026-08-15.md)
+- [Push-to-Talk / 実音声認識](docs/evaluations/speech-input-2026-08-15.md)
+- [Adaptive Performance / 固定10文とFailure Case](docs/evaluations/adaptive-performance-2026-08-18.md)
+- [Prosody Lip Sync / 5母音とアクセント句](docs/evaluations/prosody-lip-sync-2026-08-20.md)
+- [Speech input方式の選定](docs/speech-input-decision.md)
+
+## Repository構成
+
+```text
+adaptive-vrm-dialogue-agent/
+├─ frontend/
+│  ├─ e2e/              # 対話・段階的開示・MobileのPlaywright browser smoke
+│  └─ src/
+│     ├─ dialogue/       # HTTPと対話状態
+│     ├─ speech/         # VOICEVOX再生とLip Sync
+│     ├─ transcription/  # Push-to-Talkと音声認識
+│     ├─ ui/             # DOMと利用者向け表示
+│     └─ vrm/            # Three.js、VRM、表情・姿勢・動き
+├─ backend/
+│  ├─ app/               # FastAPI、Schema、Provider、Memory
+│  ├─ scripts/           # Model準備と固定Scenario評価
+│  └─ tests/             # API、Provider、Speech、Memory Test
+├─ docs/
+│  ├─ assets/            # 公開可能なScreenshot
+│  └─ evaluations/       # 評価結果とFailure Case
+├─ .github/workflows/    # CI
+├─ setup.ps1             # 初回Setup
+├─ start_demo.ps1        # Frontend/Backend統合起動
+├─ ARCHITECTURE.md
+├─ PROJECT_DIRECTION.md
+└─ DEVELOPMENT_ROADMAP.md
 ```
 
 ## 現在の制約
 
-- Ao白衣版VRM本体は含まれておらず、実モデルでの最終表示は未確認です。
-- モデル固有の髪・アクセサリーにより自動カメラ位置がずれる場合があります。
-- カスタムExpressionの意味はモデルごとに異なります。
-- VRMA、モーションキャプチャ、複数キャラクター、モバイル性能保証は対象外です。
-- Ollama、VOICEVOX、音声認識、RAG、外部API接続は実装していません。
+- BackendはLocal単一利用者向けで、Internet公開できる構成ではありません。
+- 応答はStreamingせず、完成後にまとめて表示します。対話生成途中のCancelは未実装です。
+- faster-whisper `small`は、検証した5.621秒音声のAPI経由認識に約6.8秒かかりました。Noiseを含む固定マイク評価は未完了です。
+- SQLiteは暗号化していません。機微情報の保存には使えません。
+- 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
+- 自動演技のMock判定は日本語Keyword Ruleです。皮肉や未知の言い換えを正しく理解するとは限りません。
+- Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
+- production JavaScriptは約851kBで、Viteの500kB警告が出ます。
+- UIの静的MarkupとDeveloper Panel描画は分離済みですが、`UIController`には対話・Memory・Model操作のEvent制御が残り、主要画面を増やす場合は領域別Controller化が必要です。
+- 公式Sample Avatarは動作確認に適しますが、作品の独自性は自作Avatarより弱くなります。
+- VRMA、Motion Capture、複数Avatar、Mobile性能保証は対象外です。
 
-## Ao白衣版での手動確認
+改善の優先順位と、今は追加しない機能は[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)にあります。
 
-1. Ao白衣版の配布元と利用規約を確認し、`docs/model-license-record.md`を記入する。
-2. ファイルを既定パスへ配置するか、画面から選択する。
-3. 顔から胸上が画面内に入り、正面を向いているか確認する。
-4. 10状態を順に押し、表情が滑らかに切り替わるか確認する。
-5. `happy`、`relaxed`、`sad`、`surprised`等の有無を開発者情報で確認する。
-6. 瞬き、呼吸、視線追従、首の傾きが過剰でないか確認する。
-7. カメラ調整を操作し、顔が切れない範囲を確認する。
-8. 別VRMへ再読み込みし、古いモデルが残らないことを確認する。
+## Project Documents
 
-## ロードマップ
+- [PROJECT_DIRECTION.md](PROJECT_DIRECTION.md) — Productの目的、対象利用者、評価原則、Scope
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Data flow、責務、Security境界、Fallback、技術Risk
+- [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) — 完了Gateと今後の優先順位
+- [docs/CHARACTER_DESIGN_BRIEF.md](docs/CHARACTER_DESIGN_BRIEF.md) — 独自VRMのPalette、Silhouette、演技・公開条件
+- [docs/DEMO.md](docs/DEMO.md) — 3分/1分Demoと失敗時の復帰
+- [SECURITY.md](SECURITY.md) — Local運用のSecurity境界と報告方法
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — Dependency、VOICEVOX、VRMの条件
 
-- v0.1: VRM表示、待機動作、表情・状態制御
-- v0.2: Ollamaによるテキスト対話と状態決定
-- v0.3: VOICEVOX、音声読み上げ、口パク
-- v0.4: 音声入力、聞き返し、一時記憶、科学館RAG
+## License / Credits
 
-詳細は`docs/roadmap.md`と`docs/architecture-review.md`を参照してください。
+Source code is available under the [MIT License](LICENSE).
+
+- VOICEVOXを使った公開音声: `VOICEVOX:冥鳴ひまり`
+- ScreenshotのModel: AvatarSample_A © pixiv Inc. / pixiv VRoid Project
+- Model本体、VOICEVOX、音声Library、生成WAVはRepositoryへ同梱していません。
+
+第三者ComponentとAssetの条件は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)を確認してください。

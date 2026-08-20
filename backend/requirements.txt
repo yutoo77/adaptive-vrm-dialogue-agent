@@ -1,0 +1,6 @@
+fastapi==0.141.1
+faster-whisper==1.2.1
+httpx==0.28.1
+openai==3.0.0
+python-multipart==0.0.32
+uvicorn==0.52.1
