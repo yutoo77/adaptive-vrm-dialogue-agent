@@ -1,16 +1,43 @@
 import {
-  CHARACTER_STATES,
   DEFAULT_CAMERA_SETTINGS,
+  PERFORMANCE_PREVIEW_INTENSITIES,
+  createPerformancePreviewPlan,
   type CameraSettings,
   type CharacterState,
   type ModelDiagnostics,
+  type PerformanceEmotion,
+  type PerformanceGesture,
+  type PerformancePlan,
+  type ReducedMotionMode,
 } from "../types/character";
+import type { PerformanceTimelinePhase } from "../vrm/PerformanceTimelineController";
+import type { DialogueHealth, DialogueRole, PersistentMemoryItem } from "../dialogue/types";
+import type { SpeechStatus } from "../speech/types";
+import type { MicrophoneOption, VoiceInputStatus } from "../transcription/types";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
+import { createAppMarkup, performanceEmotionLabel } from "./createAppMarkup";
+import { renderDeveloperPanel } from "./renderDeveloperPanel";
+
+export type LatencyStage = "transcription" | "dialogue" | "speech";
 
 export interface UIActions {
   readonly loadFile: (file: File) => Promise<void>;
   readonly loadDefault: () => Promise<void>;
+  readonly sendMessage: (message: string) => boolean;
+  readonly resetConversation: () => boolean;
+  readonly addPersistentMemory: (content: string) => boolean;
+  readonly updatePersistentMemory: (memoryId: string, content: string) => boolean;
+  readonly deletePersistentMemory: (memoryId: string) => boolean;
+  readonly clearPersistentMemories: () => boolean;
+  readonly refreshPersistentMemories: () => boolean;
+  readonly toggleSpeech: () => void;
+  readonly toggleVoiceInput: () => void;
+  readonly selectMicrophone: (deviceId: string) => void;
+  readonly setVoiceAutoStop: (enabled: boolean) => void;
   readonly setState: (state: CharacterState) => void;
+  readonly previewPerformance: (performance: PerformancePlan) => void;
+  readonly setReducedMotionMode: (mode: ReducedMotionMode) => boolean;
+  readonly restoreAutomaticPerformance: () => void;
   readonly setExpression: (name: string | null, weight: number) => boolean;
   readonly setCamera: (settings: CameraSettings) => CameraSettings;
   readonly resetCamera: () => CameraSettings;
@@ -26,9 +53,31 @@ export class UIController {
   private currentExpression = "なし";
   private fps = 0;
   private modelDiagnostics: ModelDiagnostics | null = null;
+  private dialogueReady = false;
+  private dialogueBusy = false;
+  private dialogueProvider = "未接続";
+  private dialogueModel = "—";
+  private dialogueMemoryTurns = 0;
+  private dialogueMemoryMaxTurns = 10;
+  private dialogueSummaryAvailable = false;
+  private persistentMemories: readonly PersistentMemoryItem[] = [];
+  private persistentMemoryBusy = false;
+  private clearMemoryArmed = false;
+  private speechState: SpeechStatus["state"] = "checking";
+  private speechAction: SpeechStatus["action"] = "none";
+  private voiceInputState: VoiceInputStatus["state"] = "checking";
+  private voiceInputAction: VoiceInputStatus["action"] = "none";
+  private microphoneOptionCount = 1;
+  private reducedMotionEnabled = false;
+  private reducedMotionMode: ReducedMotionMode = "system";
+  private readonly latencyMeasurements: Record<LatencyStage, number | null> = {
+    transcription: null,
+    dialogue: null,
+    speech: null,
+  };
 
   public constructor(private readonly root: HTMLElement) {
-    this.root.innerHTML = this.createMarkup();
+    this.root.innerHTML = createAppMarkup();
     this.viewport = this.required("#character-viewport");
     this.registerEvents();
     this.updateState("idle");
@@ -42,19 +91,16 @@ export class UIController {
   public updateState(state: CharacterState): void {
     this.currentState = state;
     const preset = getCharacterStatePreset(state);
-    const stateBadge = this.required("#current-state");
     const stageStatus = this.required("#stage-state");
     const stageMessage = this.required("#stage-message");
 
-    stateBadge.textContent = preset.label;
-    stateBadge.dataset["tone"] = preset.tone;
     stageStatus.textContent = preset.label;
     stageStatus.dataset["tone"] = preset.tone;
     stageMessage.textContent = preset.message;
     this.root.dataset["state"] = state;
 
-    this.root.querySelectorAll<HTMLButtonElement>("[data-state]").forEach((button) => {
-      const selected = button.dataset["state"] === state;
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-character-state]").forEach((button) => {
+      const selected = button.dataset["characterState"] === state;
       button.classList.toggle("is-active", selected);
       button.setAttribute("aria-pressed", String(selected));
     });
@@ -64,6 +110,65 @@ export class UIController {
   public updateExpression(expression: string): void {
     this.currentExpression = expression;
     this.updateDeveloperPanel();
+  }
+
+  public updatePerformance(performance: PerformancePlan | null, source: "automatic" | "preview" = "automatic"): void {
+    const sourceLabel = this.required("#performance-source");
+    const emotion = this.required("#performance-emotion");
+    const detail = this.required("#performance-detail");
+    const container = this.required("#performance-status");
+    if (!performance) {
+      sourceLabel.textContent = "自動演技";
+      emotion.textContent = "自然";
+      detail.textContent = "";
+      container.dataset["emotion"] = "neutral";
+      container.hidden = true;
+      return;
+    }
+
+    container.hidden = false;
+    sourceLabel.textContent = source === "preview" ? "演技比較" : "自動演技";
+
+    const emotionLabels: Readonly<Record<PerformancePlan["emotion"], string>> = {
+      neutral: "自然",
+      happy: "うれしい",
+      gentle: "やさしい",
+      curious: "興味",
+      cautious: "慎重",
+      confused: "困惑",
+    };
+    const gestureLabels: Readonly<Record<PerformancePlan["gesture"], string>> = {
+      none: "しぐさなし",
+      small_nod: "小さくうなずく",
+      head_tilt: "首をかしげる",
+      soft_bounce: "軽く弾む",
+    };
+    const voiceLabels: Readonly<Record<PerformancePlan["voice_style"], string>> = {
+      neutral: "通常",
+      warm: "温かく",
+      bright: "明るく",
+      gentle: "穏やかに",
+      serious: "落ち着いて",
+    };
+    emotion.textContent = `${emotionLabels[performance.emotion]} ${Math.round(performance.intensity * 100)}%`;
+    const cueLabel = performance.cues.length > 0 ? `・途中${performance.cues.length}回` : "";
+    detail.textContent = `${gestureLabels[performance.gesture]}・${voiceLabels[performance.voice_style]}${cueLabel}`;
+    container.dataset["emotion"] = performance.emotion;
+  }
+
+  public updatePerformancePhase(
+    phase: PerformanceTimelinePhase,
+    cueIndex?: number,
+    cueTotal?: number,
+  ): void {
+    const labels: Readonly<Record<Exclude<PerformanceTimelinePhase, "cue">, string>> = {
+      prepared: "演技準備",
+      speaking: "発話演技",
+      lingering: "演技余韻",
+      idle: "自動演技",
+    };
+    this.required("#performance-source").textContent =
+      phase === "cue" ? `途中Cue ${cueIndex ?? 1}/${cueTotal ?? 1}` : labels[phase];
   }
 
   public updateFps(fps: number): void {
@@ -126,9 +231,236 @@ export class UIController {
     this.updateDeveloperPanel();
   }
 
-  public updateReducedMotion(enabled: boolean): void {
+  public updateReducedMotion(enabled: boolean, mode: ReducedMotionMode = "system"): void {
+    this.reducedMotionEnabled = enabled;
+    this.reducedMotionMode = mode;
     const badge = this.required("#motion-status");
-    badge.hidden = !enabled;
+    badge.hidden = mode === "system" && !enabled;
+    badge.textContent = mode === "normal"
+      ? "通常動作で比較中"
+      : mode === "reduced"
+        ? "動きを抑えています（比較）"
+        : "動きを抑えています（OS設定）";
+    badge.dataset["mode"] = mode;
+    const select = this.root.querySelector<HTMLSelectElement>("#performance-motion-mode");
+    if (select) select.value = mode;
+    this.updateDeveloperPanel();
+  }
+
+  public updateDialogueConnection(health: DialogueHealth | null, errorMessage?: string): void {
+    const badge = this.required("#dialogue-provider");
+    const note = this.required("#dialogue-privacy");
+    this.dialogueReady = health?.status === "ready";
+    this.dialogueProvider = health?.provider ?? "未接続";
+    this.dialogueModel = health?.model ?? "—";
+    if (health) this.updatePersistentMemoryCount(health.persistent_memory_count);
+
+    if (!health) {
+      badge.textContent = "オフライン";
+      badge.dataset["status"] = "error";
+      note.textContent = "対話Backendが起動していません。VRM操作はそのまま利用できます。";
+    } else if (health.status === "configuration_error") {
+      badge.textContent = "設定エラー";
+      badge.dataset["status"] = "error";
+      note.textContent = health.message;
+    } else if (health.provider === "mock") {
+      badge.textContent = "ローカル";
+      badge.dataset["status"] = "mock";
+      note.textContent =
+        "直近会話はRAM、明示登録した長期記憶だけは端末内SQLiteへ保存します。Mockでは外部送信しません。";
+    } else {
+      badge.textContent = "OpenAI";
+      badge.dataset["status"] = "online";
+      note.textContent =
+        "OpenAIモードでは今回の入力、会話要約、関連する長期記憶をAPIへ送信します。VRMと音声は送信しません。";
+    }
+    badge.title = note.textContent;
+
+    if (health?.session_memory_enabled) {
+      this.updateDialogueMemory(this.dialogueMemoryTurns, health.session_memory_max_turns);
+    }
+
+    if (errorMessage) this.showDialogueError(errorMessage);
+    else if (this.dialogueReady) this.clearDialogueError();
+    this.syncDialogueControls();
+    this.updateDeveloperPanel();
+  }
+
+  public appendDialogueMessage(role: DialogueRole, text: string): void {
+    const log = this.required("#dialogue-log");
+    log.querySelector(".dialogue-empty")?.remove();
+
+    const message = document.createElement("article");
+    message.className = `dialogue-message is-${role}`;
+    const label = document.createElement("span");
+    label.textContent = role === "user" ? "あなた" : "キャラクター";
+    const body = document.createElement("p");
+    body.textContent = text;
+    message.append(label, body);
+    log.append(message);
+
+    const messages = log.querySelectorAll(".dialogue-message");
+    if (messages.length > 20) messages[0]?.remove();
+    log.scrollTop = log.scrollHeight;
+  }
+
+  public updateDialogueMemory(turns: number, maxTurns: number): void {
+    this.dialogueMemoryTurns = Math.max(0, turns);
+    this.dialogueMemoryMaxTurns = Math.max(1, maxTurns);
+    this.renderDialogueMemoryStatus();
+    this.updateDeveloperPanel();
+  }
+
+  public updateDialogueSummary(available: boolean): void {
+    this.dialogueSummaryAvailable = available;
+    this.renderDialogueMemoryStatus();
+    this.updateDeveloperPanel();
+  }
+
+  public updatePersistentMemories(items: readonly PersistentMemoryItem[]): void {
+    this.persistentMemories = items;
+    this.updatePersistentMemoryCount(items.length);
+    const list = this.required("#persistent-memory-list");
+    list.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "persistent-memory-empty";
+      empty.textContent = "記憶はまだありません。";
+      list.append(empty);
+    } else {
+      items.forEach((memory) => list.append(this.createPersistentMemoryItem(memory)));
+    }
+    this.syncPersistentMemoryControls();
+    this.updateDeveloperPanel();
+  }
+
+  public updatePersistentMemoryBusy(busy: boolean): void {
+    this.persistentMemoryBusy = busy;
+    this.required("#persistent-memory-list").setAttribute("aria-busy", String(busy));
+    this.syncPersistentMemoryControls();
+  }
+
+  public resetDialogueConversation(): void {
+    const log = this.required("#dialogue-log");
+    log.replaceChildren();
+    const empty = document.createElement("p");
+    empty.className = "dialogue-empty";
+    empty.textContent = "新しい会話を始めましょう";
+    log.append(empty);
+    this.required<HTMLTextAreaElement>("#dialogue-input").value = "";
+    this.clearDialogueError();
+    this.latencyMeasurements.transcription = null;
+    this.latencyMeasurements.dialogue = null;
+    this.latencyMeasurements.speech = null;
+    (["transcription", "dialogue", "speech"] as const).forEach((stage) => {
+      this.required(`#latency-${stage}`).textContent = "—";
+    });
+    this.updateDialogueMemory(0, this.dialogueMemoryMaxTurns);
+    this.updatePerformance(null);
+    this.updateDialogueSummary(false);
+  }
+
+  public updateDialogueBusy(busy: boolean): void {
+    this.dialogueBusy = busy;
+    const log = this.required("#dialogue-log");
+    const submit = this.required<HTMLButtonElement>("#dialogue-submit");
+    log.setAttribute("aria-busy", String(busy));
+    submit.textContent = busy ? "…" : "↑";
+    submit.setAttribute("aria-label", busy ? "応答待ち" : "送信");
+    this.syncDialogueControls();
+    this.syncSpeechControl();
+  }
+
+  public updateSpeechStatus(status: SpeechStatus): void {
+    this.speechState = status.state;
+    this.speechAction = status.action;
+    const container = this.required("#speech-status");
+    const message = this.required("#speech-status-message");
+    const button = this.required<HTMLButtonElement>("#speech-control");
+    container.dataset["speechState"] = status.state;
+    message.textContent = status.message;
+    message.title = status.message;
+    button.textContent =
+      status.action === "stop" ? "音声を停止" : status.action === "replay" ? "もう一度再生" : "音声待機";
+    button.setAttribute(
+      "aria-label",
+      status.action === "stop"
+        ? "現在の音声処理を停止"
+        : status.action === "replay"
+          ? "直前の音声をもう一度再生"
+          : "音声操作は現在利用できません",
+    );
+    this.syncSpeechControl();
+    this.updateDeveloperPanel();
+  }
+
+  public updateVoiceInputStatus(status: VoiceInputStatus): void {
+    this.voiceInputState = status.state;
+    this.voiceInputAction = status.action;
+    const container = this.required("#voice-input-status");
+    const message = this.required("#voice-input-status-message");
+    const button = this.required<HTMLButtonElement>("#voice-input-control");
+    container.dataset["voiceInputState"] = status.state;
+    message.textContent = status.message;
+    message.title = status.message;
+
+    const labels = {
+      start: "音声で入力",
+      stop: "録音を停止して認識",
+      cancel: "音声入力をキャンセル",
+      none: "音声入力は現在利用できません",
+    } as const;
+    button.setAttribute("aria-label", labels[status.action]);
+    button.title = labels[status.action];
+    button.dataset["action"] = status.action;
+    button.classList.toggle("is-active", status.state === "recording");
+    if (["requesting", "recording", "processing", "error"].includes(status.state)) {
+      this.required<HTMLDetailsElement>("#voice-tools").open = true;
+    }
+    this.syncDialogueControls();
+    this.syncSpeechControl();
+    this.updateDeveloperPanel();
+  }
+
+  public updateLatency(stage: LatencyStage, latencyMs: number): void {
+    const normalized = Math.max(0, Math.round(latencyMs));
+    this.latencyMeasurements[stage] = normalized;
+    const value = this.required(`#latency-${stage}`);
+    value.textContent = formatLatency(normalized);
+    value.title = `${normalized.toLocaleString("ja-JP")} ms`;
+    this.updateDeveloperPanel();
+  }
+
+  public setDialogueDraft(text: string): void {
+    const input = this.required<HTMLTextAreaElement>("#dialogue-input");
+    input.value = text;
+    input.focus();
+  }
+
+  public updateMicrophoneOptions(options: readonly MicrophoneOption[], selectedDeviceId: string): void {
+    const select = this.required<HTMLSelectElement>("#microphone-select");
+    select.replaceChildren();
+    options.forEach((microphone) => {
+      const option = document.createElement("option");
+      option.value = microphone.deviceId;
+      option.textContent = microphone.label;
+      select.append(option);
+    });
+    this.microphoneOptionCount = options.length;
+    select.value = options.some((option) => option.deviceId === selectedDeviceId) ? selectedDeviceId : "";
+    this.syncDialogueControls();
+  }
+
+  public showDialogueError(message: string): void {
+    const error = this.required("#dialogue-error");
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+  public clearDialogueError(): void {
+    const error = this.required("#dialogue-error");
+    error.textContent = "";
+    error.hidden = true;
   }
 
   public showFatal(message: string): void {
@@ -140,120 +472,6 @@ export class UIController {
   public dispose(): void {
     this.abortController.abort();
     this.root.replaceChildren();
-  }
-
-  private createMarkup(): string {
-    const stateButtons = CHARACTER_STATES.map((state) => {
-      const preset = getCharacterStatePreset(state);
-      return `<button class="state-button" type="button" data-state="${state}" aria-pressed="false">
-        <span class="state-dot" data-tone="${preset.tone}"></span>
-        <span><strong>${preset.shortLabel}</strong><small>${preset.label}</small></span>
-      </button>`;
-    }).join("");
-
-    return `
-      <div class="app-shell">
-        <header class="app-header">
-          <div class="brand-block">
-            <div class="brand-mark" aria-hidden="true"><span></span></div>
-            <div>
-              <div class="eyebrow">VRM CHARACTER CONTROL / v0.1</div>
-              <h1>Adaptive Character Lab</h1>
-              <p>表情と動きで応答するAIキャラクター基盤</p>
-            </div>
-          </div>
-          <div class="header-status" aria-label="現在の状態">
-            <div class="status-item"><span>状態</span><strong id="current-state" class="status-badge"></strong></div>
-            <div class="status-item"><span>モデル</span><strong id="model-status" class="model-badge" data-status="empty">確認中</strong></div>
-          </div>
-        </header>
-
-        <section class="workspace">
-          <section class="viewer-card" aria-label="キャラクタービューアー">
-            <div id="character-viewport" class="character-viewport" tabindex="0">
-              <div class="viewport-glow glow-one" aria-hidden="true"></div>
-              <div class="viewport-glow glow-two" aria-hidden="true"></div>
-              <div class="stage-grid" aria-hidden="true"></div>
-              <div id="empty-guide" class="empty-guide">
-                <span class="guide-kicker">MODEL SETUP</span>
-                <strong>VRMモデルが設定されていません</strong>
-                <p>右側からVRMファイルを選ぶか、画面へドロップしてください。</p>
-              </div>
-              <div id="loading-overlay" class="loading-overlay" hidden>
-                <div class="loading-card">
-                  <span class="loading-orbit" aria-hidden="true"></span>
-                  <strong id="loading-text">モデルを読み込んでいます</strong>
-                  <div class="progress-track"><span id="loading-progress"></span></div>
-                </div>
-              </div>
-              <div id="fatal-panel" class="fatal-panel" hidden>
-                <strong>3D表示を開始できませんでした</strong>
-                <p id="fatal-message"></p>
-              </div>
-              <div class="stage-state-card">
-                <span id="stage-state" class="stage-state"></span>
-                <p id="stage-message"></p>
-              </div>
-              <span id="motion-status" class="motion-badge" hidden>動きを抑えています</span>
-              <div class="drop-hint" aria-hidden="true">VRMをここへドロップ</div>
-            </div>
-            <div class="viewer-footer">
-              <span class="privacy-mark" aria-hidden="true">●</span>
-              <p>選択したVRMモデルはブラウザ内で読み込まれ、外部へ送信されません</p>
-            </div>
-          </section>
-
-          <aside class="control-panel" aria-label="キャラクター操作">
-            <section class="control-section model-section">
-              <div class="section-heading"><div><span>01</span><h2>モデル</h2></div><small>LOCAL FILE</small></div>
-              <label class="file-button" for="model-file">
-                <span class="file-button-icon" aria-hidden="true">＋</span>
-                <span><strong>VRMファイルを選択</strong><small>.vrm / 最大200MB</small></span>
-              </label>
-              <input id="model-file" type="file" accept=".vrm,model/gltf-binary" hidden />
-              <button id="default-model-button" class="secondary-button" type="button">既定パスを再確認</button>
-              <p class="path-note"><code>public/models/private/character.vrm</code></p>
-            </section>
-
-            <section class="control-section state-section">
-              <div class="section-heading"><div><span>02</span><h2>キャラクター状態</h2></div><small>MANUAL</small></div>
-              <div class="state-grid">${stateButtons}</div>
-            </section>
-
-            <details class="control-section compact-section">
-              <summary><span><b>03</b> 表情をテスト</span><small>EXPRESSION</small></summary>
-              <div class="details-content">
-                <label class="field-label" for="expression-select">Expression</label>
-                <select id="expression-select" disabled><option value="">モデル読み込み後に選択できます</option></select>
-                <div class="range-row">
-                  <label for="expression-weight">強さ</label>
-                  <output id="expression-weight-output">50%</output>
-                </div>
-                <input id="expression-weight" type="range" min="0" max="1" step="0.01" value="0.5" disabled />
-                <button id="expression-reset" class="text-button" type="button" disabled>状態の表情へ戻す</button>
-              </div>
-            </details>
-
-            <details class="control-section compact-section">
-              <summary><span><b>04</b> カメラ調整</span><small>FRAMING</small></summary>
-              <div class="details-content camera-controls">
-                ${this.cameraRange("distance", "距離", 0.65, 1.8, 0.01, 1)}
-                ${this.cameraRange("heightOffset", "カメラ高さ", -0.5, 0.5, 0.01, 0)}
-                ${this.cameraRange("lookAtOffset", "注視点", -0.4, 0.4, 0.01, 0)}
-                ${this.cameraRange("modelOffset", "モデル位置", -0.6, 0.6, 0.01, 0)}
-                ${this.cameraRange("scale", "表示倍率", 0.65, 1.45, 0.01, 1)}
-                <button id="camera-reset" class="text-button" type="button">標準表示に戻す</button>
-              </div>
-            </details>
-
-            <details class="control-section compact-section developer-section">
-              <summary><span><b>05</b> 開発者情報</span><small>DIAGNOSTICS</small></summary>
-              <div id="developer-content" class="details-content developer-content"></div>
-            </details>
-          </aside>
-        </section>
-        <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-      </div>`;
   }
 
   private registerEvents(): void {
@@ -275,20 +493,171 @@ export class UIController {
       { signal },
     );
 
-    this.root.querySelectorAll<HTMLButtonElement>("[data-state]").forEach((button) => {
+    this.registerDialogueEvents(signal);
+    this.registerPersistentMemoryEvents(signal);
+    this.required<HTMLButtonElement>("#conversation-reset").addEventListener(
+      "click",
+      () => this.actions?.resetConversation(),
+      { signal },
+    );
+    this.required<HTMLButtonElement>("#speech-control").addEventListener(
+      "click",
+      () => this.actions?.toggleSpeech(),
+      { signal },
+    );
+    this.required<HTMLButtonElement>("#voice-input-control").addEventListener(
+      "click",
+      () => this.actions?.toggleVoiceInput(),
+      { signal },
+    );
+    this.required<HTMLSelectElement>("#microphone-select").addEventListener(
+      "change",
+      (event) => this.actions?.selectMicrophone((event.currentTarget as HTMLSelectElement).value),
+      { signal },
+    );
+    this.required<HTMLInputElement>("#voice-auto-stop").addEventListener(
+      "change",
+      (event) => this.actions?.setVoiceAutoStop((event.currentTarget as HTMLInputElement).checked),
+      { signal },
+    );
+
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-character-state]").forEach((button) => {
       button.addEventListener(
         "click",
         () => {
-          const state = button.dataset["state"] as CharacterState | undefined;
+          const state = button.dataset["characterState"] as CharacterState | undefined;
           if (state) this.actions?.setState(state);
         },
         { signal },
       );
     });
 
+    this.registerPerformancePreviewEvents(signal);
     this.registerExpressionEvents(signal);
     this.registerCameraEvents(signal);
     this.registerDropEvents(signal);
+  }
+
+  private registerPerformancePreviewEvents(signal: AbortSignal): void {
+    const emotion = this.required<HTMLSelectElement>("#performance-preview-emotion");
+    const gesture = this.required<HTMLSelectElement>("#performance-preview-gesture");
+    const motionMode = this.required<HTMLSelectElement>("#performance-motion-mode");
+    const status = this.required("#performance-preview-status");
+    const intensityButtons = Array.from(
+      this.root.querySelectorAll<HTMLButtonElement>("button[data-performance-intensity]"),
+    );
+    let intensity: number = PERFORMANCE_PREVIEW_INTENSITIES.medium;
+
+    const modeLabel = (): string => {
+      if (motionMode.value === "normal") return "通常動作";
+      if (motionMode.value === "reduced") return "抑制動作";
+      return "OS設定に従う";
+    };
+    const apply = (): void => {
+      const plan = createPerformancePreviewPlan(
+        emotion.value as PerformanceEmotion,
+        gesture.value as PerformanceGesture,
+        intensity,
+      );
+      this.actions?.previewPerformance(plan);
+      this.updatePerformance(plan, "preview");
+      status.textContent = `${performanceEmotionLabel(plan.emotion)}・${Math.round(plan.intensity * 100)}%・${modeLabel()}`;
+    };
+
+    intensityButtons.forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.classList.contains("is-active")));
+      button.addEventListener(
+        "click",
+        () => {
+          intensity = Number(button.dataset["performanceIntensity"] ?? PERFORMANCE_PREVIEW_INTENSITIES.medium);
+          intensityButtons.forEach((candidate) => {
+            const selected = candidate === button;
+            candidate.classList.toggle("is-active", selected);
+            candidate.setAttribute("aria-pressed", String(selected));
+          });
+          apply();
+        },
+        { signal },
+      );
+    });
+    emotion.addEventListener("change", apply, { signal });
+    gesture.addEventListener("change", apply, { signal });
+    motionMode.addEventListener(
+      "change",
+      () => {
+        const mode = motionMode.value as ReducedMotionMode;
+        const enabled = this.actions?.setReducedMotionMode(mode) ?? mode === "reduced";
+        this.updateReducedMotion(enabled, mode);
+        apply();
+      },
+      { signal },
+    );
+    this.required<HTMLButtonElement>("#performance-preview-play").addEventListener("click", apply, { signal });
+    this.required<HTMLButtonElement>("#performance-preview-reset").addEventListener(
+      "click",
+      () => {
+        this.actions?.restoreAutomaticPerformance();
+        this.updatePerformance(null);
+        status.textContent = "会話連動へ戻りました。次の返答で自動選択します。";
+      },
+      { signal },
+    );
+  }
+
+  private registerDialogueEvents(signal: AbortSignal): void {
+    const form = this.required<HTMLFormElement>("#dialogue-form");
+    const input = this.required<HTMLTextAreaElement>("#dialogue-input");
+    form.addEventListener(
+      "submit",
+      (event) => {
+        event.preventDefault();
+        const message = input.value;
+        if (this.actions?.sendMessage(message)) input.value = "";
+      },
+      { signal },
+    );
+    input.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+      },
+      { signal },
+    );
+  }
+
+  private registerPersistentMemoryEvents(signal: AbortSignal): void {
+    const form = this.required<HTMLFormElement>("#persistent-memory-form");
+    const input = this.required<HTMLTextAreaElement>("#persistent-memory-input");
+    form.addEventListener(
+      "submit",
+      (event) => {
+        event.preventDefault();
+        if (this.actions?.addPersistentMemory(input.value)) input.value = "";
+      },
+      { signal },
+    );
+    this.required<HTMLButtonElement>("#persistent-memory-refresh").addEventListener(
+      "click",
+      () => this.actions?.refreshPersistentMemories(),
+      { signal },
+    );
+    const clearButton = this.required<HTMLButtonElement>("#persistent-memory-clear");
+    clearButton.addEventListener(
+      "click",
+      () => {
+        if (!this.clearMemoryArmed) {
+          this.clearMemoryArmed = true;
+          clearButton.textContent = "もう一度押して全削除";
+          window.setTimeout(() => this.resetMemoryClearButton(), 5000);
+          return;
+        }
+        if (this.actions?.clearPersistentMemories()) this.resetMemoryClearButton();
+      },
+      { signal },
+    );
   }
 
   private registerExpressionEvents(signal: AbortSignal): void {
@@ -386,81 +755,93 @@ export class UIController {
   }
 
   private updateDeveloperPanel(): void {
-    const container = this.required("#developer-content");
-    container.replaceChildren();
-    const diagnostics = this.modelDiagnostics;
-
-    const rows: readonly [string, string][] = [
-      ["モデル名", diagnostics?.modelName ?? "未設定"],
-      ["VRM", diagnostics?.vrmVersion ?? "—"],
-      ["作者", diagnostics?.authors.join(", ") || "情報なし"],
-      ["状態", this.currentState],
-      ["Expression", this.currentExpression],
-      ["FPS", `${this.fps} fps`],
-      ["読み込み", diagnostics?.loadTimeMs === null || diagnostics === null ? "—" : `${Math.round(diagnostics.loadTimeMs)} ms`],
-    ];
-    const table = document.createElement("dl");
-    table.className = "diagnostic-list";
-    rows.forEach(([label, value]) => {
-      const dt = document.createElement("dt");
-      const dd = document.createElement("dd");
-      dt.textContent = label;
-      dd.textContent = value;
-      if (label === "FPS") dd.id = "dev-fps";
-      table.append(dt, dd);
+    renderDeveloperPanel(this.required("#developer-content"), {
+      diagnostics: this.modelDiagnostics,
+      state: this.currentState,
+      expression: this.currentExpression,
+      dialogueProvider: this.dialogueProvider,
+      dialogueModel: this.dialogueModel,
+      dialogueMemoryTurns: this.dialogueMemoryTurns,
+      dialogueMemoryMaxTurns: this.dialogueMemoryMaxTurns,
+      dialogueSummaryAvailable: this.dialogueSummaryAvailable,
+      persistentMemoryCount: this.persistentMemories.length,
+      speechState: this.speechState,
+      voiceInputState: this.voiceInputState,
+      reducedMotionEnabled: this.reducedMotionEnabled,
+      reducedMotionMode: this.reducedMotionMode,
+      latencySummary: this.formatLatencySummary(),
+      fps: this.fps,
+      warnings: this.warnings,
     });
-    container.append(table);
-
-    this.appendTokenList(container, "Expression一覧", diagnostics?.expressions ?? []);
-    this.appendTokenList(container, "主要ボーン", diagnostics?.bones ?? []);
-
-    if (diagnostics && Object.keys(diagnostics.meta).length) {
-      const metaTitle = document.createElement("h3");
-      metaTitle.textContent = "メタ情報";
-      const metaList = document.createElement("dl");
-      metaList.className = "diagnostic-list compact";
-      Object.entries(diagnostics.meta).forEach(([label, value]) => {
-        const dt = document.createElement("dt");
-        const dd = document.createElement("dd");
-        dt.textContent = label;
-        dd.textContent = value;
-        metaList.append(dt, dd);
-      });
-      container.append(metaTitle, metaList);
-    }
-
-    const warningTitle = document.createElement("h3");
-    warningTitle.textContent = "警告";
-    const warningList = document.createElement("ul");
-    warningList.className = "warning-list";
-    const items = this.warnings.length ? this.warnings : ["警告はありません"];
-    items.forEach((warning) => {
-      const item = document.createElement("li");
-      item.textContent = warning;
-      warningList.append(item);
-    });
-    container.append(warningTitle, warningList);
   }
 
-  private appendTokenList(container: HTMLElement, title: string, values: readonly string[]): void {
-    const heading = document.createElement("h3");
-    heading.textContent = title;
-    const list = document.createElement("div");
-    list.className = "token-list";
-    if (!values.length) {
-      const empty = document.createElement("span");
-      empty.className = "token is-empty";
-      empty.textContent = "なし";
-      list.append(empty);
-    } else {
-      values.forEach((value) => {
-        const token = document.createElement("span");
-        token.className = "token";
-        token.textContent = value;
-        list.append(token);
-      });
-    }
-    container.append(heading, list);
+  private formatLatencySummary(): string {
+    const values = this.latencyMeasurements;
+    return `認識 ${formatLatency(values.transcription)} / 応答 ${formatLatency(values.dialogue)} / 音声 ${formatLatency(values.speech)}`;
+  }
+
+  private renderDialogueMemoryStatus(): void {
+    const summary = this.dialogueSummaryAvailable ? "・古い会話は要約済み" : "";
+    this.required("#dialogue-memory").textContent =
+      `直近 ${this.dialogueMemoryTurns} / ${this.dialogueMemoryMaxTurns}往復（RAM${summary}）`;
+  }
+
+  private updatePersistentMemoryCount(count: number): void {
+    this.required("#persistent-memory-count").textContent = `${Math.max(0, count)}件`;
+  }
+
+  private createPersistentMemoryItem(memory: PersistentMemoryItem): HTMLElement {
+    const item = document.createElement("article");
+    item.className = "persistent-memory-item";
+    item.dataset["memoryId"] = memory.id;
+    const editor = document.createElement("textarea");
+    editor.value = memory.content;
+    editor.maxLength = 500;
+    editor.rows = 2;
+    editor.setAttribute("aria-label", `長期記憶: ${memory.content}`);
+    const meta = document.createElement("small");
+    meta.textContent = `${memory.source === "explicit" ? "会話で明示" : "手動登録"}・参照 ${memory.use_count}回`;
+    const actions = document.createElement("div");
+    actions.className = "persistent-memory-item-actions";
+    const save = document.createElement("button");
+    save.type = "button";
+    save.textContent = "保存";
+    save.addEventListener(
+      "click",
+      () => this.actions?.updatePersistentMemory(memory.id, editor.value),
+      { signal: this.abortController.signal },
+    );
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "is-danger";
+    remove.textContent = "削除";
+    remove.addEventListener(
+      "click",
+      () => this.actions?.deletePersistentMemory(memory.id),
+      { signal: this.abortController.signal },
+    );
+    actions.append(save, remove);
+    item.append(editor, meta, actions);
+    return item;
+  }
+
+  private syncPersistentMemoryControls(): void {
+    const disabled = !this.dialogueReady || this.dialogueBusy || this.persistentMemoryBusy;
+    this.required<HTMLTextAreaElement>("#persistent-memory-input").disabled = disabled;
+    this.required<HTMLButtonElement>("#persistent-memory-form button").disabled = disabled;
+    this.required<HTMLButtonElement>("#persistent-memory-refresh").disabled = disabled;
+    this.required<HTMLButtonElement>("#persistent-memory-clear").disabled = disabled || !this.persistentMemories.length;
+    this.root.querySelectorAll<HTMLElement>("#persistent-memory-list textarea, #persistent-memory-list button").forEach(
+      (control) => {
+        (control as HTMLTextAreaElement | HTMLButtonElement).disabled = disabled;
+      },
+    );
+  }
+
+  private resetMemoryClearButton(): void {
+    this.clearMemoryArmed = false;
+    const button = this.required<HTMLButtonElement>("#persistent-memory-clear");
+    button.textContent = "すべて削除";
   }
 
   private showToast(message: string, type: "notice" | "error"): void {
@@ -473,18 +854,32 @@ export class UIController {
     }, 4200);
   }
 
-  private cameraRange(
-    key: keyof CameraSettings,
-    label: string,
-    min: number,
-    max: number,
-    step: number,
-    value: number,
-  ): string {
-    return `<div class="camera-field">
-      <div class="range-row"><label for="camera-${key}">${label}</label><output data-camera-output="${key}">${value.toFixed(2)}</output></div>
-      <input id="camera-${key}" data-camera="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" />
-    </div>`;
+  private syncDialogueControls(): void {
+    const voiceBusy = this.isVoiceInputBusy();
+    const disabled = !this.dialogueReady || this.dialogueBusy || voiceBusy;
+    this.required<HTMLTextAreaElement>("#dialogue-input").disabled = disabled;
+    this.required<HTMLButtonElement>("#dialogue-submit").disabled = disabled;
+    this.required<HTMLButtonElement>("#voice-input-control").disabled =
+      !this.dialogueReady || this.dialogueBusy || this.voiceInputAction === "none";
+    this.required<HTMLSelectElement>("#microphone-select").disabled =
+      !this.dialogueReady || this.dialogueBusy || voiceBusy || this.microphoneOptionCount <= 1;
+    this.required<HTMLInputElement>("#voice-auto-stop").disabled =
+      !this.dialogueReady || this.dialogueBusy || voiceBusy || this.voiceInputAction === "none";
+    this.required<HTMLButtonElement>("#conversation-reset").disabled = disabled;
+    this.syncPersistentMemoryControls();
+  }
+
+  private syncSpeechControl(): void {
+    this.required<HTMLButtonElement>("#speech-control").disabled =
+      this.speechAction === "none" || this.dialogueBusy || this.isVoiceInputBusy();
+  }
+
+  private isVoiceInputBusy(): boolean {
+    return (
+      this.voiceInputState === "requesting" ||
+      this.voiceInputState === "recording" ||
+      this.voiceInputState === "processing"
+    );
   }
 
   private required<T extends HTMLElement = HTMLElement>(selector: string): T {
@@ -492,4 +887,10 @@ export class UIController {
     if (!element) throw new Error(`Required UI element is missing: ${selector}`);
     return element;
   }
+}
+
+function formatLatency(latencyMs: number | null): string {
+  if (latencyMs === null) return "—";
+  if (latencyMs < 1000) return `${latencyMs} ms`;
+  return `${(latencyMs / 1000).toFixed(2)} s`;
 }

@@ -24,17 +24,24 @@ import {
   type Material,
 } from "three";
 import type { VRM } from "@pixiv/three-vrm";
+import type { SpeechViseme } from "../speech/types";
 
 import {
   DEFAULT_CAMERA_SETTINGS,
   type CameraSettings,
   type CharacterState,
   type ModelDiagnostics,
+  type PerformanceGesture,
+  type PerformancePlan,
+  type ReducedMotionMode,
+  performanceEmotionToState,
+  resolveReducedMotion,
 } from "../types/character";
 import { clampCameraSettings } from "../utils/math";
 import { getCharacterStatePreset } from "./CharacterStatePresets";
 import { CharacterController } from "./CharacterController";
 import { IdleMotionController } from "./IdleMotionController";
+import { PerformanceMotionController } from "./PerformanceMotionController";
 import { disposeVRMModel, loadVRMModel, ModelLoadError } from "./modelLoader";
 
 export const DEFAULT_MODEL_PATH = "/models/private/character.vrm";
@@ -50,7 +57,7 @@ export interface VRMViewerEvents {
   readonly onWarning: (message: string) => void;
   readonly onError: (message: string) => void;
   readonly onFps: (fps: number) => void;
-  readonly onReducedMotionChange: (enabled: boolean) => void;
+  readonly onReducedMotionChange: (enabled: boolean, mode: ReducedMotionMode) => void;
 }
 
 export class VRMViewer {
@@ -62,6 +69,7 @@ export class VRMViewer {
   private readonly lookAtTarget = new Object3D();
   private readonly controller: CharacterController;
   private readonly idleMotion = new IdleMotionController();
+  private readonly performanceMotion = new PerformanceMotionController();
   private readonly resizeObserver: ResizeObserver;
   private readonly reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   private currentVRM: VRM | null = null;
@@ -73,6 +81,7 @@ export class VRMViewer {
   private disposed = false;
   private frameCount = 0;
   private fpsElapsed = 0;
+  private reducedMotionMode: ReducedMotionMode = "system";
 
   public constructor(
     private readonly container: HTMLElement,
@@ -107,11 +116,44 @@ export class VRMViewer {
   }
 
   public setState(state: CharacterState): void {
+    this.performanceMotion.reset();
     this.controller.setState(state);
+  }
+
+  public setPerformance(plan: PerformancePlan): void {
+    this.preparePerformance(plan);
+    this.playPerformanceGesture(plan.gesture, plan.intensity);
+  }
+
+  public preparePerformance(plan: PerformancePlan): void {
+    this.controller.applyPerformance(performanceEmotionToState(plan.emotion), plan.intensity);
+  }
+
+  public playPerformanceGesture(gesture: PerformanceGesture, intensity: number): void {
+    this.performanceMotion.start(gesture, intensity);
+  }
+
+  public setReducedMotionMode(mode: ReducedMotionMode): boolean {
+    this.reducedMotionMode = mode;
+    const enabled = resolveReducedMotion(mode, this.reducedMotionQuery.matches);
+    this.applyReducedMotion(enabled);
+    return enabled;
   }
 
   public setManualExpression(name: string | null, weight: number): boolean {
     return this.controller.setManualExpression(name, weight);
+  }
+
+  public setLipSyncWeight(weight: number): boolean {
+    return this.controller.setLipSyncWeight(weight);
+  }
+
+  public setLipSyncViseme(viseme: SpeechViseme, weight: number): boolean {
+    return this.controller.setLipSyncViseme(viseme, weight);
+  }
+
+  public resetLipSync(): void {
+    this.controller.resetLipSync();
   }
 
   public setCameraSettings(settings: CameraSettings): CameraSettings {
@@ -184,19 +226,19 @@ export class VRMViewer {
 
   private setupScene(): void {
     this.scene.background = null;
-    this.scene.add(new AmbientLight(new Color("#f6f9ff"), 2.4));
+    this.scene.add(new AmbientLight(new Color("#eef1ff"), 2.35));
 
-    const keyLight = new DirectionalLight(new Color("#fffdf8"), 4.2);
+    const keyLight = new DirectionalLight(new Color("#fffdfb"), 4.25);
     keyLight.position.set(2.4, 4.2, 3.2);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(1024, 1024);
     this.scene.add(keyLight);
 
-    const rimLight = new DirectionalLight(new Color("#b8c8ff"), 2.1);
+    const rimLight = new DirectionalLight(new Color("#9da9eb"), 2.25);
     rimLight.position.set(-3.5, 2.6, -1.5);
     this.scene.add(rimLight);
 
-    const floor = new Mesh(new PlaneGeometry(8, 8), new ShadowMaterial({ color: 0x7182a3, opacity: 0.12 }));
+    const floor = new Mesh(new PlaneGeometry(8, 8), new ShadowMaterial({ color: 0x59668f, opacity: 0.14 }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.015;
     floor.receiveShadow = true;
@@ -209,13 +251,13 @@ export class VRMViewer {
 
   private createPlaceholder(): void {
     const bodyMaterial = new MeshPhysicalMaterial({
-      color: new Color("#dfe9ff"),
+      color: new Color("#f1f3ff"),
       roughness: 0.58,
       metalness: 0.02,
       clearcoat: 0.2,
     });
     const accentMaterial = new MeshPhysicalMaterial({
-      color: new Color("#dcd7ff"),
+      color: new Color("#8278b8"),
       roughness: 0.5,
       metalness: 0.04,
     });
@@ -361,9 +403,10 @@ export class VRMViewer {
       const delta = Math.min(this.timer.getDelta(), 0.05);
       const preset = getCharacterStatePreset(this.controller.getState());
       const motion = this.idleMotion.update(delta, preset.motion);
+      const performance = this.performanceMotion.update(delta);
 
       if (this.currentVRM) {
-        this.controller.update(delta, motion);
+        this.controller.update(delta, motion, performance);
         this.currentVRM.update(delta);
       } else {
         this.placeholder.rotation.y = motion.swayAngle * 0.8;
@@ -397,11 +440,12 @@ export class VRMViewer {
   };
 
   private readonly handleReducedMotionChange = (event: MediaQueryListEvent): void => {
-    this.applyReducedMotion(event.matches);
+    if (this.reducedMotionMode === "system") this.applyReducedMotion(event.matches);
   };
 
   private applyReducedMotion(enabled: boolean): void {
     this.idleMotion.setReducedMotion(enabled);
-    this.events.onReducedMotionChange(enabled);
+    this.performanceMotion.setReducedMotion(enabled);
+    this.events.onReducedMotionChange(enabled, this.reducedMotionMode);
   }
 }
