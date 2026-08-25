@@ -50,7 +50,9 @@ def test_openai_provider_sends_recent_history_with_store_disabled() -> None:
         relevant_memories=(MemorySnippet(id="memory-1", content="好きな色は青"),),
     )
 
-    reply = asyncio.run(provider.generate_reply("さっきの続きを話して", context, "request-test"))
+    reply = asyncio.run(
+        provider.generate_reply("さっきの続きを話して", context, "beginner", "request-test")
+    )
 
     assert reply.text == "文脈を受け取った返答です。"
     assert reply.performance.emotion == "gentle"
@@ -74,3 +76,5 @@ def test_openai_provider_sends_recent_history_with_store_disabled() -> None:
     ]
     assert fake_client.responses.kwargs["store"] is False
     assert fake_client.responses.kwargs["text_format"] is StructuredDialogueOutput
+    assert "応答スタイルはbeginner" in fake_client.responses.kwargs["instructions"]
+    assert "専門用語をできるだけ避け" in fake_client.responses.kwargs["instructions"]

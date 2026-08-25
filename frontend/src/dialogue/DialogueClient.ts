@@ -1,3 +1,4 @@
+import { isResponseStyle } from "./types";
 import type {
   DialogueHealth,
   DialogueProviderName,
@@ -7,6 +8,7 @@ import type {
   PersistentMemoryItem,
   PersistentMemoryListResponse,
   PersistentMemoryMutationResponse,
+  ResponseStyle,
   SessionResetResponse,
 } from "./types";
 import { isPerformancePlan } from "../types/character";
@@ -40,13 +42,18 @@ export class DialogueClient {
     return payload;
   }
 
-  public async sendMessage(message: string, sessionId: string, signal?: AbortSignal): Promise<DialogueResponse> {
+  public async sendMessage(
+    message: string,
+    sessionId: string,
+    responseStyle: ResponseStyle,
+    signal?: AbortSignal,
+  ): Promise<DialogueResponse> {
     const payload = await this.request(
       "/dialogue",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, session_id: sessionId }),
+        body: JSON.stringify({ message, session_id: sessionId, response_style: responseStyle }),
       },
       signal,
       this.timeoutMs,
@@ -207,6 +214,7 @@ function isDialogueResponse(value: unknown): value is DialogueResponse {
   return (
     isRecord(value) &&
     typeof value["reply"] === "string" &&
+    isResponseStyle(value["response_style"]) &&
     isPerformancePlan(value["performance"]) &&
     isProviderName(value["provider"]) &&
     typeof value["model"] === "string" &&

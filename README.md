@@ -6,7 +6,11 @@
 
 Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声・表情・口形・しぐさを変える、ローカル優先の対話Applicationです。
 
+> **Product Vision:** 自然に会話でき、利用者が許可したことだけを覚え、声・表情・視線・しぐさまで一貫して反応する、ローカル優先の個人AIキャラクター。
+
 このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
+
+現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイルまでを実装しています。実Providerでの自然な複数Turn会話、Streaming/Cancel、独自Avatarは今後の評価対象であり、完成済みとは主張しません。
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
@@ -43,7 +47,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 | 領域 | 実装内容 |
 | --- | --- |
-| 対話 | Text入力、Mock/OpenAI Provider切替、Timeout、Request ID、Frontend/Backend双方の応答検証 |
+| 対話 | Text入力、Mock/OpenAI Provider切替、明示選択する返答スタイル4種、Timeout、Request ID、Frontend/Backend双方の応答検証 |
 | Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認 |
 | Voice output | ローカルVOICEVOX、接続確認、自動再生、停止、再再生、Text回答を残すFallback |
 | Lip Sync | VOICEVOX母音Timingを`aa / ih / ou / ee / oh`へ同期し、音量Envelopeで開口量を調整 |
@@ -78,11 +82,15 @@ VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、�
 
 既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。VOICEVOX接続先もLoopback HTTPだけを許可します。
 
-### 6. 会話を主役にする情報設計
+### 6. 利用者を推測しないAdaptive Interaction
+
+返答の長さと説明量を「短く・自然・詳しく・やさしく」から利用者が明示選択します。選択値はPydantic/TypeScriptの同じ4種類に制限し、Mockでは差を決定的に再現、OpenAIでは固定した指示へ変換します。声や文面から能力・感情を推測せず、選択はSession内だけに保持してReload時に既定の「自然」へ戻します。
+
+### 7. 会話を主役にする情報設計
 
 初期画面にはAvatar、会話履歴、入力だけを常時表示し、音声、記憶、演技調整、診断情報は必要なときに開く段階的開示へ整理しています。待機中の正常状態は繰り返し表示せず、処理中・失敗・利用者の判断が必要な状態だけを会話の近くへ出します。Nielsenの「システム状態の可視化」「利用者による制御」「不要情報を減らす」を判断基準として、Mobileでも入力欄が初期Viewport内に残ることをBrowser testで固定しています。
 
-### 7. Assetに依存しないVisual identity
+### 8. Assetに依存しないVisual identity
 
 Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材ではなくCSSのGradient、Border、Mask、Animationで描画しています。深藍・白練・藤色を基調にし、`CharacterState`を反映した`data-state`だけで、聞き取り時は青磁、思考時は藤色、発話時は水紋へ控えめな変化を加えます。環境演出は`prefers-reduced-motion`で停止し、Avatar制御や対話処理とは分離しています。
 
@@ -91,7 +99,8 @@ Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材�
 ```mermaid
 flowchart LR
     User["User\nText / Push-to-Talk"] --> UI["Vanilla TypeScript UI"]
-    UI --> Dialogue["DialogueController"]
+    UI --> Style["Response style\nexplicit 4 options"]
+    Style --> Dialogue["DialogueController"]
     Dialogue --> API["FastAPI"]
     API <--> Session["Session Memory\nRAM + summary"]
     API <--> SQLite["Explicit Memory\nSQLite"]
@@ -261,12 +270,12 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e`はMock固定のBackendとFrontendを必要に応じて自動起動し、Chromiumで対話一往復、詳細設定の段階的開示、Mobile初期Viewportと横Overflowを確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
+`npm run test:e2e`はMock固定のBackendとFrontendを必要に応じて自動起動し、Chromiumで対話一往復、返答スタイルの変更、詳細設定の段階的開示、Mobile初期Viewportと横Overflowを確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
 
-2026-08-20時点の確認結果:
+2026-08-25時点の確認結果:
 
-- Frontend: TypeScript、ESLint、Vitest **60件**、Playwright browser smoke **3件**、production build成功
-- Backend: Ruff、Pytest **45件**、`pip check`成功
+- Frontend: TypeScript、ESLint、Vitest **61件**、Playwright browser smoke **4件**、production build成功
+- Backend: Ruff、Pytest **52件**、`pip check`成功
 - Dependency audit: npm **0件**、pip-audit **0件**の既知脆弱性
 - Browser: Desktop、390px幅、319px幅、実VRM、Mock対話、VOICEVOX、5母音Lip Sync、自動演技を確認
 - Browser console: warning/error **0件**
@@ -283,6 +292,7 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 - [Push-to-Talk / 実音声認識](docs/evaluations/speech-input-2026-08-15.md)
 - [Adaptive Performance / 固定10文とFailure Case](docs/evaluations/adaptive-performance-2026-08-18.md)
 - [Prosody Lip Sync / 5母音とアクセント句](docs/evaluations/prosody-lip-sync-2026-08-20.md)
+- [Adaptive Interaction / 明示4スタイルと境界](docs/evaluations/adaptive-interaction-2026-08-25.md)
 - [Speech input方式の選定](docs/speech-input-decision.md)
 
 ## Repository構成
@@ -292,7 +302,7 @@ adaptive-vrm-dialogue-agent/
 ├─ frontend/
 │  ├─ e2e/              # 対話・段階的開示・MobileのPlaywright browser smoke
 │  └─ src/
-│     ├─ dialogue/       # HTTPと対話状態
+│     ├─ dialogue/       # HTTP、対話状態、明示返答スタイル
 │     ├─ speech/         # VOICEVOX再生とLip Sync
 │     ├─ transcription/  # Push-to-Talkと音声認識
 │     ├─ ui/             # DOMと利用者向け表示
@@ -319,9 +329,10 @@ adaptive-vrm-dialogue-agent/
 - faster-whisper `small`は、検証した5.621秒音声のAPI経由認識に約6.8秒かかりました。Noiseを含む固定マイク評価は未完了です。
 - SQLiteは暗号化していません。機微情報の保存には使えません。
 - 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
+- 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。Mockの差は固定Demoで、実OpenAI応答品質は未評価です。
 - 自動演技のMock判定は日本語Keyword Ruleです。皮肉や未知の言い換えを正しく理解するとは限りません。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
-- production JavaScriptは約851kBで、Viteの500kB警告が出ます。
+- production JavaScriptは約852kBで、Viteの500kB警告が出ます。
 - UIの静的MarkupとDeveloper Panel描画は分離済みですが、`UIController`には対話・Memory・Model操作のEvent制御が残り、主要画面を増やす場合は領域別Controller化が必要です。
 - 公式Sample Avatarは動作確認に適しますが、作品の独自性は自作Avatarより弱くなります。
 - VRMA、Motion Capture、複数Avatar、Mobile性能保証は対象外です。

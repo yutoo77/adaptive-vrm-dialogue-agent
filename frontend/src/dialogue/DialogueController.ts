@@ -13,12 +13,18 @@ import type {
   PersistentMemoryItem,
   PersistentMemoryListResponse,
   PersistentMemoryMutationResponse,
+  ResponseStyle,
   SessionResetResponse,
 } from "./types";
 
 export interface DialogueGateway {
   readonly getHealth: (signal?: AbortSignal) => Promise<DialogueHealth>;
-  readonly sendMessage: (message: string, sessionId: string, signal?: AbortSignal) => Promise<DialogueResponse>;
+  readonly sendMessage: (
+    message: string,
+    sessionId: string,
+    responseStyle: ResponseStyle,
+    signal?: AbortSignal,
+  ) => Promise<DialogueResponse>;
   readonly resetSession: (sessionId: string, signal?: AbortSignal) => Promise<SessionResetResponse>;
   readonly listMemories: (signal?: AbortSignal) => Promise<PersistentMemoryListResponse>;
   readonly createMemory: (content: string, signal?: AbortSignal) => Promise<PersistentMemoryMutationResponse>;
@@ -65,6 +71,7 @@ export class DialogueController {
   private memoryBusy = false;
   private disposed = false;
   private sessionId: string;
+  private responseStyle: ResponseStyle = "balanced";
 
   public constructor(
     private readonly gateway: DialogueGateway,
@@ -107,12 +114,18 @@ export class DialogueController {
       return false;
     }
 
-    void this.performSend(message);
+    void this.performSend(message, this.responseStyle);
     return true;
   }
 
   public toggleSpeech(): void {
     if (!this.disposed && !this.busy) this.speechOutput?.toggle();
+  }
+
+  public setResponseStyle(style: ResponseStyle): boolean {
+    if (this.busy || this.disposed) return false;
+    this.responseStyle = style;
+    return true;
   }
 
   public resetConversation(): boolean {
@@ -177,7 +190,7 @@ export class DialogueController {
     this.clearIdleTimer();
   }
 
-  private async performSend(message: string): Promise<void> {
+  private async performSend(message: string, responseStyle: ResponseStyle): Promise<void> {
     const startedAt = performance.now();
     this.busy = true;
     this.speechOutput?.stop();
@@ -190,7 +203,12 @@ export class DialogueController {
     const controller = new AbortController();
     this.requestController = controller;
     try {
-      const response = await this.gateway.sendMessage(message, this.sessionId, controller.signal);
+      const response = await this.gateway.sendMessage(
+        message,
+        this.sessionId,
+        responseStyle,
+        controller.signal,
+      );
       if (this.disposed) return;
       this.callbacks.onLatency?.(Math.max(0, Math.round(performance.now() - startedAt)));
       this.callbacks.onMemoryChange?.(response.memory_turns, response.memory_max_turns);

@@ -105,6 +105,7 @@ try {
     loadFile: (file: File) => viewer?.loadFile(file) ?? Promise.resolve(),
     loadDefault: () => viewer?.loadDefaultModel() ?? Promise.resolve(),
     sendMessage: (message: string) => dialogue.send(message),
+    setResponseStyle: (style) => dialogue.setResponseStyle(style),
     resetConversation: () => dialogue.resetConversation(),
     addPersistentMemory: (content: string) => dialogue.addPersistentMemory(content),
     updatePersistentMemory: (memoryId: string, content: string) =>
@@ -140,10 +141,15 @@ try {
     },
   });
 
-  void viewer.loadDefaultModel();
+  const modelInitialization = viewer.loadDefaultModel();
   void dialogue.initialize();
   void speech.initialize();
-  void voiceInput.initialize();
+  // A local VRM can briefly occupy the browser main thread. Start microphone discovery after
+  // that first load so its short health check does not report a false failure during parsing.
+  void modelInitialization.then(
+    () => voiceInput.initialize(),
+    () => voiceInput.initialize(),
+  );
 } catch (error: unknown) {
   const message = error instanceof Error ? error.message : "不明な初期化エラーです。";
   ui.addWarning(message);

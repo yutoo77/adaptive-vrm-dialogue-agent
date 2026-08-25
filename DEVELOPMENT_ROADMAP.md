@@ -1,12 +1,18 @@
 # Development Roadmap
 
-更新日: 2026-08-20
+更新日: 2026-08-25
 
 このRoadmapは機能数ではなく、各Vertical Sliceが「動く・復帰できる・評価できる・説明できる」状態になったかで進行を判断する。
 
+## Product Vision
+
+> 自然に会話でき、利用者が許可したことだけを覚え、声・表情・視線・しぐさまで一貫して反応する、ローカル優先の個人AIキャラクター。
+
+今後の主要開発は、このVisionを構成する能力を一つずつ完成させる。同時に複数の主要機能を進めず、既定Mock、Text fallback、利用者による保存・外部送信の制御を壊さない。
+
 ## 現在のRelease目標
 
-現在の目標は、新機能追加ではなく、既存のLocal Applicationを就職活動で提示できるPublic Repositoryへ仕上げること。
+現在の目標は、Public Portfolioとして公開済みのLocal Applicationへ、利用者が返答量を明示制御できる`v0.3 Adaptive Interaction`を一つの評価可能なVertical Sliceとして追加すること。
 
 ### Public Portfolio Gate
 
@@ -19,8 +25,10 @@
 - [x] Worktreeと既存Git履歴のSecret patternを確認する。
 - [x] npm/pipの既知脆弱性を監査する。
 - [x] Cleanな一時環境でSetup、Test、Buildを再現する。
-- [ ] 変更差分をReviewし、明示承認後にStage/Commit/Pushする。
-- [ ] GitHubの説明、Topics、Visibilityを最終確認する。
+- [x] 変更差分をReviewし、明示承認後にStage/Commit/Pushする。
+- [x] GitHubの説明、Topics、Visibilityを最終確認する。
+
+このPublic Portfolio Gateはv0.2公開時に完了した。v0.3の変更は別Branchで検証し、Commit/Pushは改めて分離して扱う。
 
 Public化と、動作中BackendをInternetへ公開することは別である。現在のBackendは`127.0.0.1`専用で、公開Serviceに必要な認証、Rate Limit、TLS、利用者分離を持たない。
 
@@ -68,39 +76,78 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 弱30%/中60%/強90%とReduced Motion比較
 - 固定10文とFailure Case評価
 
+### Adaptive Interaction
+
+- 返答量を「短く・自然・詳しく・やさしく」の4種類から明示選択
+- PydanticとTypeScriptで同じEnumを検証し、不明な値を拒否
+- Mockでは無料・決定的に差を再現し、OpenAIでは固定Instructionへ変換
+- 能力・感情を自動推定せず、選択はFrontendのSession内だけで保持
+- API/Provider/Controller/Browser testと固定入力評価
+
 ## 現在のEvidence
 
 | 対象 | 自動確認 | 実動作確認 | 残るGap |
 | --- | --- | --- | --- |
-| Frontend | Type/lint/build、Vitest 60件、Playwright 3件（Mock一往復・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
-| Backend | Ruff、Pytest 45件、pip check | Mock/VOICEVOX Health | 実OpenAIは未確認 |
+| Frontend | Type/lint/build、Vitest 61件、Playwright 4件（Mock一往復・返答スタイル・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
+| Backend | Ruff、Pytest 52件、pip check | Mock/VOICEVOX Health | 実OpenAIは未確認 |
 | Voice output | API/WAV/Stop/Timing Test | 実VOICEVOX 10/10 | Engine処理の途中Cancel |
 | Voice input | Permission/無音/Cancel/マイクTest | 実マイク短文1件 | Noiseを含む固定10文 |
 | Performance | Schema/Cue/Reduced Motion Test | 固定10文10/10、実VRM | 皮肉・未知言い換え |
+| Interaction | 4種のSchema/API/UI伝播、不明値拒否、OpenAI Instruction Test | Mock固定入力で4種の差を確認 | 実OpenAIの文章品質、利用者評価 |
 | Memory | Session/Persistence/Search Test | CRUD UI | 言い換え検索の定量評価 |
-| Security | Local pattern scan、Gitleaks CI、npm/pip audit 0件 | Loopback bind/ignored data確認 | Public化後のGitHub Secret scanning確認 |
+| Security | Local pattern scan、Gitleaks CI、npm/pip audit 0件 | Loopback bind/ignored data、Public RepositoryのSecret scanning確認 | 新しい依存・Data追加時の継続監査 |
 
 詳細は[docs/evaluations](docs/evaluations/)を参照する。固定Scenarioの成功を一般化性能として主張しない。
 
-## 公開後の優先順位
+## Visionに向けた優先順位
 
-### P1 — 現在の体験を強くする
+### P1 — v0.4 Natural Conversation
+
+最初の主要Sliceは、実Providerを任意で使った自然な複数Turn会話とする。実API Request、費用発生、外部送信は所有者の明示承認後だけ行う。
+
+- Character Profile、会話履歴、明示記憶、返答スタイルを一つのContext契約へ整理する。
+- Text Streamingまたは段階表示、生成Cancel、発話・Cue・口形の一括停止を設計する。
+- 応答開始、本文完了、音声開始までのLatencyを分けて計測する。
+- 代表会話とFailure Caseで、文脈保持、冗長さ、不確実性、Character一貫性を評価する。
+- 既定MockとText fallbackを維持し、実Providerが使えなくても起動とDemoを継続できるようにする。
+
+完了条件:
+
+- 実Providerで複数Turnの代表Scenarioを再現し、結果と費用を記録する。
+- 利用者が生成をCancelでき、音声・口形・Gestureが残らない。
+- 外部送信対象をUIとREADMEから確認できる。
+- Mock、Provider failure、VOICEVOX failureの各Fallbackが通る。
+
+### P2 — v0.5 Character Identity and Embodied Consistency
+
+- 自作または公開条件を満たす改変Avatarを用意し、和風StageとVisual identityを統一する。
+- Character Profileに口調、価値観、避ける表現、Voice設定をVersion付きで定義する。
+- Turnをまたぐ感情の余韻、視線、頷き、Gestureの頻度とBlendを調整する。
+- 本文、Voice Style、表情、視線、Gestureが矛盾しない固定Scenarioを評価する。
+- Reduced MotionとModel差異のFallbackを維持する。
+
+### P3 — v0.6 Trusted Memory
+
+- 長期記憶は明示追加または会話中の確認承認だけに限定する。
+- 意味検索を導入する場合も、参照した記憶と理由を利用者へ示す。
+- 矛盾、期限、編集履歴、Export/Import、全削除を扱う。
+- 通常会話の自動永続化と、同意のない大規模User Profileは行わない。
+
+### P4 — Productization and Performance
 
 1. 実マイク固定10文を静音/生活雑音で比較し、意味保持率、再試行、Latencyを記録する。
-2. 主要画面を追加する場合だけ、残る`UIController` Event調整を対話、Memory、Model領域へ分割する。静的MarkupとDeveloper Panel描画は分離済み。
-3. Three.js/VRMをDynamic importし、約851kBのproduction bundleを分割する。
-4. Windows以外の起動導線が必要になった場合だけ、Cross-platform scriptまたはDockerを選ぶ。
-5. Code-nativeな和風Stageと状態連動の環境光は完了。次は自作・改変Avatarを用意し、背景とCharacterのVisual identityを統一する。
+2. 初回Setup、依存診断、Engine状態、復帰手順を一つの起動体験へまとめる。
+3. Three.js/VRMをDynamic importし、約852kBのproduction bundleを分割する。
+4. 主要画面を追加する場合だけ、残る`UIController` Event調整を領域別に分割する。
+5. Windows以外の起動導線が必要になった場合だけ、Cross-platform scriptまたはPackagingを選ぶ。
 
-### P2 — Bounded Agent
+### P5 — Bounded AgentまたはVisionは具体的価値がある場合だけ
 
-固定処理だけでは解けない具体的な「公開Knowledgeを検索し、根拠を示す」Scenarioを用意できた場合に進む。
+Bounded Agentは、固定処理だけでは解けない「公開Knowledgeを検索し、根拠を示す」Scenarioを用意できた場合に進む。
 
-- 1 Agentのみ
-- 許可Actionを`ANSWER / ASK_CLARIFICATION / SEARCH / SHOW_SOURCE / REFUSE`へ限定
-- ToolはKnowledge SearchとSource Verificationから最大2つ
-- 最大実行回数、Timeout、Cancel、Input/Output Schemaを固定
-- Chain of Thoughtを保存せず、Action、Tool、Latency、成否、Source IDだけを記録
+- 1 Agent、Tool最大2つとし、許可Actionを`ANSWER / ASK_CLARIFICATION / SEARCH / SHOW_SOURCE / REFUSE`へ限定する。最大実行回数、Timeout、Cancelも固定する。
+- Chain of Thoughtを保存せず、Action、Tool、Latency、成否、Source IDだけを記録する。
+- 外部ActionはPreviewと利用者確認を必須にする。
 
 完了条件:
 
@@ -109,11 +156,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 検索不要、聞き返し、根拠不足の拒否を固定Scenarioで確認する。
 - Agentが固定Ruleより必要だった理由を説明できる。
 
-### P3 — Adaptive InteractionまたはVisionの一方
-
-最初の候補は、利用者が「短く」「詳しく」「初心者向け」を明示選択するAdaptive Interaction。Privacy Riskと評価負荷が低く、現在の対話UIへ自然に接続できるため。
-
-Visionは、画像なしでは解けない具体的なScenarioと公開可能な評価Dataを用意できた場合だけ選ぶ。同時に両方を実装しない。
+Visionは、画像なしでは解けない具体的なScenarioと公開可能な評価Dataを用意できた場合だけ選ぶ。機能数を増やす目的では追加しない。
 
 ## 今は行わないこと
 
@@ -134,3 +177,4 @@ Visionは、画像なしでは解けない具体的なScenarioと公開可能な
 3. 自動Testまたは再現可能な手動手順がある。
 4. 費用、外部送信、保存Data、Licenseを説明できる。
 5. READMEとArchitectureが実装と一致する。
+6. Product Visionのどの要素を改善したか説明できる。

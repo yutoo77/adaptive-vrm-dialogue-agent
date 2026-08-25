@@ -2,6 +2,8 @@ import type { PerformancePlan } from "../types/character";
 
 export type DialogueProviderName = "mock" | "openai";
 export type DialogueRole = "user" | "assistant";
+export const RESPONSE_STYLES = ["concise", "balanced", "detailed", "beginner"] as const;
+export type ResponseStyle = (typeof RESPONSE_STYLES)[number];
 
 export interface DialogueHealth {
   readonly status: "ready" | "configuration_error";
@@ -46,6 +48,7 @@ export interface PersistentMemoryClearResponse {
 
 export interface DialogueResponse {
   readonly reply: string;
+  readonly response_style: ResponseStyle;
   readonly performance: PerformancePlan;
   readonly provider: DialogueProviderName;
   readonly model: string;
@@ -62,4 +65,8 @@ export interface DialogueResponse {
 export interface SessionResetResponse {
   readonly session_id: string;
   readonly cleared_turns: number;
+}
+
+export function isResponseStyle(value: unknown): value is ResponseStyle {
+  return RESPONSE_STYLES.some((style) => style === value);
 }

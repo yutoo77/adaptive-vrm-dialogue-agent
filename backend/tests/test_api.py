@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.config import ConfigurationError, Settings
 from app.conversation import ConversationMemoryStore, DialogueContext
+from app.interaction import ResponseStyle
 from app.main import create_app
 from app.performance import PerformancePlan
 from app.persistent_memory import PersistentMemoryStore
@@ -19,8 +20,15 @@ SESSION_A = "session-test-alpha"
 SESSION_B = "session-test-bravo"
 
 
-def dialogue_payload(message: str, session_id: str = SESSION_A) -> dict[str, str]:
-    return {"message": message, "session_id": session_id}
+def dialogue_payload(
+    message: str,
+    session_id: str = SESSION_A,
+    response_style: ResponseStyle | None = None,
+) -> dict[str, str]:
+    payload = {"message": message, "session_id": session_id}
+    if response_style is not None:
+        payload["response_style"] = response_style
+    return payload
 
 
 def build_client(settings: Settings | None = None) -> TestClient:
@@ -56,6 +64,7 @@ def test_mock_dialogue_returns_a_traceable_response() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["reply"] == "こんにちは。今日はどんなことを話そうか？"
+    assert payload["response_style"] == "balanced"
     assert payload["performance"] == {
         "emotion": "happy",
         "intensity": 0.64,
@@ -81,6 +90,33 @@ def test_mock_capability_reply_matches_current_voice_features() -> None:
     assert response.status_code == 200
     assert "VOICEVOXの音声再生と口の動き" in response.json()["reply"]
     assert "次の段階" not in response.json()["reply"]
+
+
+def test_mock_response_styles_are_explicit_bounded_and_visibly_different() -> None:
+    client = build_client()
+    replies: dict[ResponseStyle, str] = {}
+
+    for style in ("concise", "balanced", "detailed", "beginner"):
+        response = client.post(
+            "/api/dialogue",
+            json=dialogue_payload("何ができる？", f"session-style-{style}", style),
+        )
+        assert response.status_code == 200
+        assert response.json()["response_style"] == style
+        replies[style] = response.json()["reply"]
+
+    assert len(replies["concise"]) < len(replies["balanced"]) < len(replies["detailed"])
+    assert "端末内で作った音声の再生" in replies["beginner"]
+    assert "短い説明" in replies["beginner"]
+
+
+def test_dialogue_rejects_an_unknown_response_style() -> None:
+    response = build_client().post(
+        "/api/dialogue",
+        json={**dialogue_payload("テスト"), "response_style": "auto-detect"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_mock_remembers_recent_context_within_one_session() -> None:
@@ -141,15 +177,18 @@ class RecordingProvider:
 
     def __init__(self) -> None:
         self.contexts: list[DialogueContext] = []
+        self.response_styles: list[ResponseStyle] = []
 
     async def generate_reply(
         self,
         message: str,
         context: DialogueContext,
+        response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply:
         del message, request_id
         self.contexts.append(context)
+        self.response_styles.append(response_style)
         return ProviderReply(
             text="記録しました。",
             performance=PerformancePlan(
@@ -179,6 +218,7 @@ def test_compacted_summary_is_given_to_the_provider_with_recent_turns() -> None:
     assert latest_context.session_summary is not None
     assert "話題0" in latest_context.session_summary
     assert latest_context.recent_messages[0].content == "話題1"
+    assert provider.response_styles[-1] == "balanced"
 
 
 def test_explicit_memory_is_saved_recalled_and_not_removed_by_session_reset() -> None:
@@ -248,9 +288,10 @@ class FailingProvider:
         self,
         message: str,
         context: DialogueContext,
+        response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply:
-        del message, context, request_id
+        del message, context, response_style, request_id
         raise ProviderError(504, "provider_timeout", "時間内に応答できませんでした。")
 
 

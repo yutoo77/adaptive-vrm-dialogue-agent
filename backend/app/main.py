@@ -68,7 +68,7 @@ def create_app(
 
     app = FastAPI(
         title="Adaptive VRM Dialogue API",
-        version="0.2.0",
+        version="0.3.0",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
@@ -97,7 +97,12 @@ def create_app(
             async with state_lock:
                 relevant_memories = resolved_persistent_memory_store.search(request.message)
                 context = resolved_conversation_store.context(request.session_id, relevant_memories)
-                result = await resolved_provider.generate_reply(request.message, context, request_id)
+                result = await resolved_provider.generate_reply(
+                    request.message,
+                    context,
+                    request.response_style,
+                    request_id,
+                )
                 explicit_memory = extract_explicit_memory(request.message)
                 saved_memory = None
                 if explicit_memory:
@@ -147,16 +152,18 @@ def create_app(
         latency_ms = round((perf_counter() - started_at) * 1000)
         logger.info(
             "dialogue_completed request_id=%s provider=%s model=%s latency_ms=%s "
-            "memory_turns=%s upstream_request_id=%s",
+            "response_style=%s memory_turns=%s upstream_request_id=%s",
             request_id,
             resolved_provider.name,
             resolved_provider.model,
             latency_ms,
+            request.response_style,
             memory_turns,
             result.upstream_request_id or "none",
         )
         return DialogueResponse(
             reply=result.text,
+            response_style=request.response_style,
             performance=result.performance,
             provider=resolved_provider.name,
             model=resolved_provider.model,

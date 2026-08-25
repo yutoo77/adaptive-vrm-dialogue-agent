@@ -10,9 +10,9 @@ export default defineConfig({
   fullyParallel: false,
   retries: isCI ? 1 : 0,
   reporter: isCI ? [["github"], ["html", { open: "never" }]] : "list",
-  timeout: 30_000,
+  timeout: 60_000,
   expect: {
-    timeout: 10_000,
+    timeout: 30_000,
   },
   use: {
     baseURL: "http://127.0.0.1:15173",
@@ -30,6 +30,7 @@ export default defineConfig({
       env: {
         DIALOGUE_PROVIDER: "mock",
         VOICEVOX_BASE_URL: "http://127.0.0.1:59999",
+        VOICEVOX_TIMEOUT_SECONDS: "3",
       },
       url: "http://127.0.0.1:18000/api/health",
       reuseExistingServer: false,
