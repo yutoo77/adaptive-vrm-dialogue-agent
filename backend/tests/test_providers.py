@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 from app.config import Settings
@@ -21,6 +22,13 @@ class FakeResponse:
         ),
     )
     _request_id = "upstream-test"
+    usage = SimpleNamespace(
+        input_tokens=120,
+        output_tokens=45,
+        total_tokens=165,
+        input_tokens_details=SimpleNamespace(cached_tokens=20),
+        output_tokens_details=SimpleNamespace(reasoning_tokens=0),
+    )
 
 
 class FakeResponses:
@@ -56,6 +64,10 @@ def test_openai_provider_sends_recent_history_with_store_disabled() -> None:
 
     assert reply.text == "文脈を受け取った返答です。"
     assert reply.performance.emotion == "gentle"
+    assert reply.usage is not None
+    assert reply.usage.input_tokens == 120
+    assert reply.usage.output_tokens == 45
+    assert reply.usage.cached_input_tokens == 20
     assert fake_client.responses.kwargs is not None
     assert fake_client.responses.kwargs["input"] == [
         {
