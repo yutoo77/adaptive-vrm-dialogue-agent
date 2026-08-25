@@ -55,6 +55,22 @@ test("secondary controls stay behind progressive disclosure", async ({ page }) =
   await expect(page.locator("#app")).toHaveAttribute("data-state", "thinking");
 });
 
+test("explicit response style reaches the free Mock provider", async ({ page }) => {
+  await page.goto("/");
+
+  const style = page.getByRole("combobox", { name: "返答の詳しさ" });
+  await expect(style).toHaveValue("balanced");
+  await style.selectOption("detailed");
+
+  await page.getByRole("textbox", { name: "メッセージ" }).fill("何ができる？");
+  await page.getByRole("button", { name: "送信" }).click();
+
+  await expect(page.locator("#dialogue-log .is-assistant p")).toContainText(
+    "要点を分けて順番に詳しく説明するよ",
+  );
+  await expect(style).toBeEnabled();
+});
+
 test("mobile keeps the conversation composer in the first viewport", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 844 },

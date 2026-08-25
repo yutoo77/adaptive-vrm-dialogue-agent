@@ -15,11 +15,12 @@ from openai import (
 
 from app.config import ProviderName, Settings
 from app.conversation import DialogueContext
+from app.interaction import ResponseStyle, apply_mock_response_style, response_style_instruction
 from app.performance import PerformancePlan, StructuredDialogueOutput, select_mock_performance
 from app.persistent_memory import extract_explicit_memory
 
 SYSTEM_INSTRUCTIONS = """あなたはVRMアバターとして日本語で対話するアシスタントです。
-返答は自然で簡潔な1〜3文を基本にしてください。
+利用者が明示選択した応答スタイルに従ってください。
 不確かな内容は断定せず、必要なら確認を促してください。
 自分を人間だと偽らず、まだ使えないツールや記憶があるように振る舞わないでください。
 返答内容に合う控えめな感情・しぐさ・声色をperformanceへ設定してください。
@@ -57,6 +58,7 @@ class DialogueProvider(Protocol):
         self,
         message: str,
         context: DialogueContext,
+        response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply: ...
 
@@ -71,6 +73,7 @@ class MockProvider:
         self,
         message: str,
         context: DialogueContext,
+        response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply:
         del request_id
@@ -108,7 +111,11 @@ class MockProvider:
                 f"「{summary}」と受け取ったよ。今は無料のMock応答だけど、"
                 "同じ画面からOpenAIへ切り替えられる構成だよ。"
             )
-        return ProviderReply(text=reply, performance=select_mock_performance(message, reply))
+        styled_reply = apply_mock_response_style(reply, response_style)
+        return ProviderReply(
+            text=styled_reply,
+            performance=select_mock_performance(message, styled_reply),
+        )
 
 
 class UnavailableProvider:
@@ -123,9 +130,10 @@ class UnavailableProvider:
         self,
         message: str,
         context: DialogueContext,
+        response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply:
-        del message, context, request_id
+        del message, context, response_style, request_id
         raise ProviderError(503, "provider_not_configured", self.configuration_message)
 
 
@@ -149,6 +157,7 @@ class OpenAIProvider:
         self,
         message: str,
         context: DialogueContext,
+        response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply:
         input_items: list[dict[str, str]] = []
@@ -174,7 +183,7 @@ class OpenAIProvider:
         try:
             response = await self._client.responses.parse(
                 model=self.model,
-                instructions=SYSTEM_INSTRUCTIONS,
+                instructions=f"{SYSTEM_INSTRUCTIONS}\n\n{response_style_instruction(response_style)}",
                 input=input_items,
                 text_format=StructuredDialogueOutput,
                 max_output_tokens=self._max_output_tokens,

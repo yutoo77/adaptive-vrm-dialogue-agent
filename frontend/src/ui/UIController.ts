@@ -11,7 +11,7 @@ import {
   type ReducedMotionMode,
 } from "../types/character";
 import type { PerformanceTimelinePhase } from "../vrm/PerformanceTimelineController";
-import type { DialogueHealth, DialogueRole, PersistentMemoryItem } from "../dialogue/types";
+import type { DialogueHealth, DialogueRole, PersistentMemoryItem, ResponseStyle } from "../dialogue/types";
 import type { SpeechStatus } from "../speech/types";
 import type { MicrophoneOption, VoiceInputStatus } from "../transcription/types";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
@@ -24,6 +24,7 @@ export interface UIActions {
   readonly loadFile: (file: File) => Promise<void>;
   readonly loadDefault: () => Promise<void>;
   readonly sendMessage: (message: string) => boolean;
+  readonly setResponseStyle: (style: ResponseStyle) => boolean;
   readonly resetConversation: () => boolean;
   readonly addPersistentMemory: (content: string) => boolean;
   readonly updatePersistentMemory: (memoryId: string, content: string) => boolean;
@@ -500,6 +501,11 @@ export class UIController {
       () => this.actions?.resetConversation(),
       { signal },
     );
+    this.required<HTMLSelectElement>("#response-style-select").addEventListener(
+      "change",
+      (event) => this.actions?.setResponseStyle((event.currentTarget as HTMLSelectElement).value as ResponseStyle),
+      { signal },
+    );
     this.required<HTMLButtonElement>("#speech-control").addEventListener(
       "click",
       () => this.actions?.toggleSpeech(),
@@ -866,6 +872,7 @@ export class UIController {
     this.required<HTMLInputElement>("#voice-auto-stop").disabled =
       !this.dialogueReady || this.dialogueBusy || voiceBusy || this.voiceInputAction === "none";
     this.required<HTMLButtonElement>("#conversation-reset").disabled = disabled;
+    this.required<HTMLSelectElement>("#response-style-select").disabled = this.dialogueBusy || voiceBusy;
     this.syncPersistentMemoryControls();
   }
 

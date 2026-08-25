@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.interaction import ResponseStyle
 from app.performance import PerformancePlan
 
 
@@ -12,6 +13,7 @@ class DialogueRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=1000)
     session_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    response_style: ResponseStyle = "balanced"
 
 
 class SpeechRequest(BaseModel):
@@ -22,6 +24,7 @@ class SpeechRequest(BaseModel):
 
 class DialogueResponse(BaseModel):
     reply: str
+    response_style: ResponseStyle
     performance: PerformancePlan
     provider: Literal["mock", "openai"]
     model: str

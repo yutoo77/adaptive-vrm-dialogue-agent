@@ -48,6 +48,7 @@ const MEMORY_GATEWAY = {
 
 const RESPONSE: DialogueResponse = {
   reply: "こんにちは。",
+  response_style: "balanced",
   performance: {
     emotion: "neutral",
     intensity: 0.35,
@@ -119,12 +120,14 @@ function createCallbacks() {
 it("validates and sends the latest text message to the backend", async () => {
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(JSON.stringify({ message: "テスト", session_id: "session-test-alpha" }));
+    expect(init?.body).toBe(
+      JSON.stringify({ message: "テスト", session_id: "session-test-alpha", response_style: "detailed" }),
+    );
     return new Response(JSON.stringify(RESPONSE), { status: 200 });
   });
   const client = new DialogueClient(fetchMock, "/api", 1000);
 
-  await expect(client.sendMessage("テスト", "session-test-alpha")).resolves.toEqual(RESPONSE);
+  await expect(client.sendMessage("テスト", "session-test-alpha", "detailed")).resolves.toEqual(RESPONSE);
 });
 
 it("resets one backend conversation session", async () => {
@@ -179,7 +182,7 @@ it("uses the backend public error instead of leaking an unknown payload", async 
   );
   const client = new DialogueClient(fetchMock, "/api", 1000);
 
-  await expect(client.sendMessage("テスト", "session-test-alpha")).rejects.toMatchObject({
+  await expect(client.sendMessage("テスト", "session-test-alpha", "balanced")).rejects.toMatchObject({
     message: "少し待ってください。",
     status: 429,
     code: "rate_limited",
@@ -191,7 +194,7 @@ it("turns an unstructured backend failure into actionable recovery guidance", as
   const fetchMock = vi.fn(async () => new Response("proxy failure", { status: 500 }));
   const client = new DialogueClient(fetchMock, "/api", 1000);
 
-  await expect(client.sendMessage("テスト", "session-test-alpha")).rejects.toMatchObject({
+  await expect(client.sendMessage("テスト", "session-test-alpha", "balanced")).rejects.toMatchObject({
     message: "Backendで処理を完了できませんでした。起動状態を確認して、もう一度送信してください。",
     status: 500,
     code: "backend_unavailable",
@@ -199,6 +202,28 @@ it("turns an unstructured backend failure into actionable recovery guidance", as
 });
 
 describe("DialogueController", () => {
+  it("sends only the explicitly selected response style", async () => {
+    const sentStyles: string[] = [];
+    const gateway: DialogueGateway = {
+      ...MEMORY_GATEWAY,
+      getHealth: async () => READY_HEALTH,
+      sendMessage: async (_message, _sessionId, responseStyle) => {
+        sentStyles.push(responseStyle);
+        return { ...RESPONSE, response_style: responseStyle };
+      },
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+    };
+    const observed = createCallbacks();
+    const controller = new DialogueController(gateway, observed.callbacks);
+
+    await controller.initialize();
+    expect(controller.setResponseStyle("beginner")).toBe(true);
+    expect(controller.send("仕組みを教えて")).toBe(true);
+    await vi.waitFor(() => expect(sentStyles).toEqual(["beginner"]));
+
+    controller.dispose();
+  });
+
   it("moves the avatar through thinking, explaining, and idle", async () => {
     vi.useFakeTimers();
     const gateway: DialogueGateway = {

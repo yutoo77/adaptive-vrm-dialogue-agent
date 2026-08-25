@@ -79,6 +79,15 @@ export function createAppMarkup(): string {
               <h2>会話</h2>
               <div class="conversation-actions">
                 <small id="dialogue-provider" class="dialogue-provider" data-status="offline" aria-describedby="dialogue-privacy">確認中</small>
+                <label class="response-style-control" for="response-style-select">
+                  <span>返し方</span>
+                  <select id="response-style-select" aria-label="返答の詳しさ" title="次の返答の詳しさを選択">
+                    <option value="concise">短く</option>
+                    <option value="balanced" selected>自然</option>
+                    <option value="detailed">詳しく</option>
+                    <option value="beginner">やさしく</option>
+                  </select>
+                </label>
                 <button id="conversation-reset" class="conversation-reset" type="button" aria-label="新しい会話" title="新しい会話" disabled>
                   <span aria-hidden="true">↻</span><span class="conversation-reset-label">新しい会話</span>
                 </button>

@@ -228,6 +228,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dialogue-provider::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
 .dialogue-provider[data-status="mock"], .dialogue-provider[data-status="online"] { color: var(--teal); }
 .dialogue-provider[data-status="error"] { color: var(--rose); }
+.response-style-control { display: inline-flex; align-items: center; gap: 5px; color: #858b8c; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.response-style-control select { width: 70px; height: 28px; margin: 0; padding: 3px 20px 3px 7px; border: 1px solid #dedbd5; border-radius: 8px; color: #596061; background: #fbfaf7; font-size: 10px; font-weight: 700; cursor: pointer; }
+.response-style-control select:disabled { cursor: not-allowed; opacity: .55; }
 .conversation-reset { display: inline-flex; min-height: 30px; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid transparent; border-radius: 8px; color: #6d7475; background: transparent; font-size: 10px; font-weight: 700; cursor: pointer; }
 .conversation-reset:hover:not(:disabled) { border-color: var(--line); background: var(--surface-soft); }
 .conversation-reset:disabled { cursor: not-allowed; opacity: .4; }
@@ -443,6 +446,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   .dialogue-section { padding: 16px; }
   .conversation-header { margin-bottom: 10px; }
   .conversation-header h2 { font-size: 18px; }
+  .response-style-control > span { display: none; }
   .conversation-reset-label { display: none; }
   .dialogue-log { height: 245px; min-height: 220px; padding-top: 12px; }
   .dialogue-form { margin-top: 9px; }
