@@ -7,6 +7,8 @@ export interface DeveloperPanelModel {
   readonly dialogueProvider: string;
   readonly dialogueModel: string;
   readonly characterProfile: string;
+  readonly emotionalContinuity: string;
+  readonly gazeBehavior: string;
   readonly dialogueMemoryTurns: number;
   readonly dialogueMemoryMaxTurns: number;
   readonly dialogueSummaryAvailable: boolean;
@@ -31,6 +33,8 @@ export function renderDeveloperPanel(container: HTMLElement, model: DeveloperPan
     ["Expression", model.expression],
     ["対話", `${model.dialogueProvider} / ${model.dialogueModel}`],
     ["人格Profile", model.characterProfile],
+    ["感情継続", model.emotionalContinuity],
+    ["視線", model.gazeBehavior],
     ["会話記憶", `${model.dialogueMemoryTurns} / ${model.dialogueMemoryMaxTurns} 往復（RAM）`],
     ["会話要約", model.dialogueSummaryAvailable ? "あり（RAM）" : "なし"],
     ["長期記憶", `${model.persistentMemoryCount} 件（端末内SQLite）`],

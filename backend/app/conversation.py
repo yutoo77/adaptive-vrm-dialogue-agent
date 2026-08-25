@@ -4,6 +4,8 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Literal
 
+from app.continuity import EmotionalContinuity
+
 ConversationRole = Literal["user", "assistant"]
 
 
@@ -24,6 +26,7 @@ class DialogueContext:
     recent_messages: tuple[ConversationMessage, ...]
     session_summary: str | None = None
     relevant_memories: tuple[MemorySnippet, ...] = ()
+    emotional_continuity: EmotionalContinuity | None = None
 
 
 @dataclass(slots=True)
@@ -61,11 +64,13 @@ class ConversationMemoryStore:
         self,
         session_id: str,
         relevant_memories: tuple[MemorySnippet, ...] = (),
+        emotional_continuity: EmotionalContinuity | None = None,
     ) -> DialogueContext:
         return DialogueContext(
             recent_messages=self.history(session_id),
             session_summary=self.summary(session_id),
             relevant_memories=relevant_memories,
+            emotional_continuity=emotional_continuity,
         )
 
     def append_turn(self, session_id: str, user_message: str, assistant_message: str) -> int:

@@ -25,6 +25,7 @@ import {
 } from "three";
 import type { VRM } from "@pixiv/three-vrm";
 import type { SpeechViseme } from "../speech/types";
+import type { EmotionalContinuity } from "../dialogue/types";
 
 import {
   DEFAULT_CAMERA_SETTINGS,
@@ -40,6 +41,7 @@ import {
 import { clampCameraSettings } from "../utils/math";
 import { getCharacterStatePreset } from "./CharacterStatePresets";
 import { CharacterController } from "./CharacterController";
+import { GazeMotionController } from "./GazeMotionController";
 import { IdleMotionController } from "./IdleMotionController";
 import { PerformanceMotionController } from "./PerformanceMotionController";
 import { disposeVRMModel, loadVRMModel, ModelLoadError } from "./modelLoader";
@@ -69,6 +71,7 @@ export class VRMViewer {
   private readonly lookAtTarget = new Object3D();
   private readonly controller: CharacterController;
   private readonly idleMotion = new IdleMotionController();
+  private readonly gazeMotion = new GazeMotionController();
   private readonly performanceMotion = new PerformanceMotionController();
   private readonly resizeObserver: ResizeObserver;
   private readonly reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -82,6 +85,7 @@ export class VRMViewer {
   private frameCount = 0;
   private fpsElapsed = 0;
   private reducedMotionMode: ReducedMotionMode = "system";
+  private emotionalContinuity: EmotionalContinuity | null = null;
 
   public constructor(
     private readonly container: HTMLElement,
@@ -127,6 +131,33 @@ export class VRMViewer {
 
   public preparePerformance(plan: PerformancePlan): void {
     this.controller.applyPerformance(performanceEmotionToState(plan.emotion), plan.intensity);
+  }
+
+  public setEmotionalContinuity(continuity: EmotionalContinuity): void {
+    this.emotionalContinuity = continuity;
+    this.gazeMotion.setBehavior(continuity.gaze_behavior, continuity.intensity);
+    this.idleMotion.setContinuityScale(continuity.motion_scale);
+  }
+
+  public returnToEmotionalBaseline(): void {
+    this.performanceMotion.reset();
+    const continuity = this.emotionalContinuity;
+    if (!continuity || continuity.emotion === "neutral") {
+      this.controller.setState("idle");
+      return;
+    }
+    this.controller.applyPerformance(
+      performanceEmotionToState(continuity.emotion),
+      Math.min(0.38, continuity.intensity * 0.46),
+    );
+  }
+
+  public resetEmotionalContinuity(): void {
+    this.emotionalContinuity = null;
+    this.gazeMotion.reset();
+    this.idleMotion.setContinuityScale(1);
+    this.controller.setAmbientGaze(0, 0);
+    this.setState("idle");
   }
 
   public playPerformanceGesture(gesture: PerformanceGesture, intensity: number): void {
@@ -403,7 +434,9 @@ export class VRMViewer {
       const delta = Math.min(this.timer.getDelta(), 0.05);
       const preset = getCharacterStatePreset(this.controller.getState());
       const motion = this.idleMotion.update(delta, preset.motion);
+      const gaze = this.gazeMotion.update(delta);
       const performance = this.performanceMotion.update(delta);
+      this.controller.setAmbientGaze(gaze.offsetX, gaze.offsetY);
 
       if (this.currentVRM) {
         this.controller.update(delta, motion, performance);
@@ -445,6 +478,7 @@ export class VRMViewer {
 
   private applyReducedMotion(enabled: boolean): void {
     this.idleMotion.setReducedMotion(enabled);
+    this.gazeMotion.setReducedMotion(enabled);
     this.performanceMotion.setReducedMotion(enabled);
     this.events.onReducedMotionChange(enabled, this.reducedMotionMode);
   }

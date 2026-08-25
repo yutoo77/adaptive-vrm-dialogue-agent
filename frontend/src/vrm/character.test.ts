@@ -17,6 +17,7 @@ import { VRMHumanBoneName } from "@pixiv/three-vrm";
 import { CharacterController, NEUTRAL_UPPER_ARM_ROLLS } from "./CharacterController";
 import { CHARACTER_STATE_PRESETS, getCharacterStatePreset } from "./CharacterStatePresets";
 import { IdleMotionController } from "./IdleMotionController";
+import { GazeMotionController } from "./GazeMotionController";
 import { PerformanceMotionController } from "./PerformanceMotionController";
 import {
   performanceLingerMs,
@@ -185,6 +186,46 @@ describe("idle motion", () => {
     expect(Math.abs(reducedFrame.breathOffset)).toBeLessThan(Math.abs(normalFrame.breathOffset));
     expect(Math.abs(reducedFrame.swayAngle)).toBeLessThan(Math.abs(normalFrame.swayAngle));
   });
+
+  it("applies the bounded emotional continuity scale to idle motion", () => {
+    const normal = new IdleMotionController(() => 0.5);
+    const subdued = new IdleMotionController(() => 0.5);
+    subdued.setContinuityScale(0.5);
+
+    const normalFrame = normal.update(0.8, idlePreset.motion);
+    const subduedFrame = subdued.update(0.8, idlePreset.motion);
+    expect(Math.abs(subduedFrame.breathOffset)).toBeLessThan(Math.abs(normalFrame.breathOffset));
+    expect(Math.abs(subduedFrame.swayAngle)).toBeLessThan(Math.abs(normalFrame.swayAngle));
+  });
+});
+
+describe("gaze motion", () => {
+  it("changes gaze on a bounded emotional rhythm and eases toward the target", () => {
+    const values = [0, 1, 0.75, 0.25];
+    const gaze = new GazeMotionController(() => values.shift() ?? 0.5);
+    gaze.setBehavior("curious", 0.8);
+
+    const before = gaze.update(1);
+    const after = gaze.update(3.2);
+
+    expect(before.offsetX).toBe(0);
+    expect(before.offsetY).toBeGreaterThan(0);
+    expect(Math.abs(after.offsetX)).toBeGreaterThan(0);
+    expect(Math.abs(after.offsetX)).toBeLessThanOrEqual(0.22);
+    expect(Math.abs(after.offsetY)).toBeLessThanOrEqual(0.15);
+  });
+
+  it("subdues ambient gaze when reduced motion is active", () => {
+    const normal = new GazeMotionController(() => 0);
+    const reduced = new GazeMotionController(() => 0);
+    normal.setBehavior("responsive", 1);
+    reduced.setBehavior("responsive", 1);
+    reduced.setReducedMotion(true);
+
+    const normalFrame = normal.update(6);
+    const reducedFrame = reduced.update(6);
+    expect(Math.abs(reducedFrame.offsetX)).toBeLessThan(Math.abs(normalFrame.offsetX));
+  });
 });
 
 describe("performance motion", () => {
@@ -228,8 +269,8 @@ describe("performance timeline", () => {
   it("prepares the expression first and starts the one-shot gesture only when audio starts", () => {
     const preparePerformance = vi.fn();
     const playGesture = vi.fn();
-    const returnToIdle = vi.fn();
-    const timeline = new PerformanceTimelineController({ preparePerformance, playGesture, returnToIdle });
+    const returnToBaseline = vi.fn();
+    const timeline = new PerformanceTimelineController({ preparePerformance, playGesture, returnToBaseline });
 
     timeline.prepare(plan);
     expect(preparePerformance).toHaveBeenCalledOnce();
@@ -238,28 +279,28 @@ describe("performance timeline", () => {
     timeline.handlePlayback({ type: "started", durationMs: 4_000, phraseBoundariesMs: [] });
     expect(preparePerformance).toHaveBeenCalledTimes(2);
     expect(playGesture).toHaveBeenCalledWith("small_nod", 0.6);
-    expect(returnToIdle).not.toHaveBeenCalled();
+    expect(returnToBaseline).not.toHaveBeenCalled();
   });
 
   it("keeps a short post-speech linger and returns immediately for stop or failure", () => {
     vi.useFakeTimers();
     try {
-      const returnToIdle = vi.fn();
+      const returnToBaseline = vi.fn();
       const timeline = new PerformanceTimelineController({
         preparePerformance: vi.fn(),
         playGesture: vi.fn(),
-        returnToIdle,
+        returnToBaseline,
       });
       timeline.prepare(plan);
       timeline.handlePlayback({ type: "completed" });
       vi.advanceTimersByTime(performanceLingerMs(plan) - 1);
-      expect(returnToIdle).not.toHaveBeenCalled();
+      expect(returnToBaseline).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
-      expect(returnToIdle).toHaveBeenCalledOnce();
+      expect(returnToBaseline).toHaveBeenCalledOnce();
 
       timeline.handlePlayback({ type: "stopped" });
       timeline.handlePlayback({ type: "failed" });
-      expect(returnToIdle).toHaveBeenCalledTimes(3);
+      expect(returnToBaseline).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
@@ -273,7 +314,7 @@ describe("performance timeline", () => {
       const timeline = new PerformanceTimelineController({
         preparePerformance: vi.fn(),
         playGesture,
-        returnToIdle: vi.fn(),
+        returnToBaseline: vi.fn(),
         reportPhase,
       });
       timeline.prepare(plan);

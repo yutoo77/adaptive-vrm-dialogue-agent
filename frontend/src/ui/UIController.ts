@@ -15,6 +15,7 @@ import type {
   CharacterProfile,
   DialogueHealth,
   DialogueRole,
+  EmotionalContinuity,
   PersistentMemoryItem,
   ResponseStyle,
 } from "../dialogue/types";
@@ -71,6 +72,7 @@ export class UIController {
   private dialogueMemoryTurns = 0;
   private dialogueMemoryMaxTurns = 10;
   private dialogueSummaryAvailable = false;
+  private emotionalContinuity: EmotionalContinuity | null = null;
   private persistentMemories: readonly PersistentMemoryItem[] = [];
   private persistentMemoryBusy = false;
   private clearMemoryArmed = false;
@@ -130,16 +132,21 @@ export class UIController {
     const detail = this.required("#performance-detail");
     const container = this.required("#performance-status");
     if (!performance) {
-      sourceLabel.textContent = "自動演技";
+      sourceLabel.textContent = "反応";
       emotion.textContent = "自然";
       detail.textContent = "";
+      container.removeAttribute("title");
       container.dataset["emotion"] = "neutral";
       container.hidden = true;
       return;
     }
 
     container.hidden = false;
-    sourceLabel.textContent = source === "preview" ? "演技比較" : "自動演技";
+    sourceLabel.textContent = source === "preview"
+      ? "演技比較"
+      : this.emotionalContinuity?.carried_from_previous
+        ? "余韻"
+        : "反応";
 
     const emotionLabels: Readonly<Record<PerformancePlan["emotion"], string>> = {
       neutral: "自然",
@@ -162,10 +169,23 @@ export class UIController {
       gentle: "穏やかに",
       serious: "落ち着いて",
     };
-    emotion.textContent = `${emotionLabels[performance.emotion]} ${Math.round(performance.intensity * 100)}%`;
     const cueLabel = performance.cues.length > 0 ? `・途中${performance.cues.length}回` : "";
-    detail.textContent = `${gestureLabels[performance.gesture]}・${voiceLabels[performance.voice_style]}${cueLabel}`;
+    if (source === "preview") {
+      emotion.textContent = `${emotionLabels[performance.emotion]} ${Math.round(performance.intensity * 100)}%`;
+      detail.textContent = `${gestureLabels[performance.gesture]}・${voiceLabels[performance.voice_style]}${cueLabel}`;
+      container.removeAttribute("title");
+    } else {
+      emotion.textContent = emotionLabels[performance.emotion];
+      detail.textContent = performance.gesture === "none" ? "" : gestureLabels[performance.gesture];
+      container.title = `${Math.round(performance.intensity * 100)}%・${voiceLabels[performance.voice_style]}${cueLabel}`;
+    }
     container.dataset["emotion"] = performance.emotion;
+  }
+
+  public updateEmotionalContinuity(continuity: EmotionalContinuity): void {
+    this.emotionalContinuity = continuity;
+    this.root.dataset["continuity"] = continuity.carried_from_previous ? "carried" : "current";
+    this.updateDeveloperPanel();
   }
 
   public updatePerformancePhase(
@@ -174,13 +194,13 @@ export class UIController {
     cueTotal?: number,
   ): void {
     const labels: Readonly<Record<Exclude<PerformanceTimelinePhase, "cue">, string>> = {
-      prepared: "演技準備",
-      speaking: "発話演技",
-      lingering: "演技余韻",
-      idle: "自動演技",
+      prepared: "反応",
+      speaking: "話している",
+      lingering: "余韻",
+      idle: this.emotionalContinuity?.carried_from_previous ? "余韻" : "反応",
     };
     this.required("#performance-source").textContent =
-      phase === "cue" ? `途中Cue ${cueIndex ?? 1}/${cueTotal ?? 1}` : labels[phase];
+      phase === "cue" ? `しぐさ ${cueIndex ?? 1}/${cueTotal ?? 1}` : labels[phase];
   }
 
   public updateFps(fps: number): void {
@@ -411,6 +431,8 @@ export class UIController {
       this.required(`#latency-${stage}`).textContent = "—";
     });
     this.updateDialogueMemory(0, this.dialogueMemoryMaxTurns);
+    this.emotionalContinuity = null;
+    delete this.root.dataset["continuity"];
     this.updatePerformance(null);
     this.updateDialogueSummary(false);
   }
@@ -860,6 +882,10 @@ export class UIController {
       dialogueProvider: this.dialogueProvider,
       dialogueModel: this.dialogueModel,
       characterProfile: `${this.characterProfileId} v${this.characterProfileVersion}`,
+      emotionalContinuity: this.emotionalContinuity
+        ? `${this.emotionalContinuity.emotion} ${Math.round(this.emotionalContinuity.intensity * 100)}% / ${this.emotionalContinuity.turns_held} turn${this.emotionalContinuity.carried_from_previous ? " / carried" : ""}`
+        : "なし",
+      gazeBehavior: this.emotionalContinuity?.gaze_behavior ?? "responsive",
       dialogueMemoryTurns: this.dialogueMemoryTurns,
       dialogueMemoryMaxTurns: this.dialogueMemoryMaxTurns,
       dialogueSummaryAvailable: this.dialogueSummaryAvailable,

@@ -8,7 +8,13 @@ import {
   type SpeechOutput,
 } from "./DialogueController";
 import type { PerformancePlan } from "../types/character";
-import type { DialogueHealth, DialogueResponse, DialogueRole, PersistentMemoryItem } from "./types";
+import type {
+  DialogueHealth,
+  DialogueResponse,
+  DialogueRole,
+  EmotionalContinuity,
+  PersistentMemoryItem,
+} from "./types";
 
 const READY_HEALTH: DialogueHealth = {
   status: "ready",
@@ -19,6 +25,8 @@ const READY_HEALTH: DialogueHealth = {
   session_memory_enabled: true,
   session_memory_max_turns: 10,
   session_summary_enabled: true,
+  emotional_continuity_enabled: true,
+  emotional_continuity_max_carry_turns: 2,
   persistent_memory_enabled: true,
   persistent_memory_count: 0,
   character: {
@@ -87,6 +95,16 @@ const RESPONSE: DialogueResponse = {
     voice_style: "neutral",
     cues: [],
   },
+  continuity: {
+    emotion: "neutral",
+    intensity: 0.35,
+    turn_index: 1,
+    turns_held: 1,
+    carried_from_previous: false,
+    gaze_behavior: "responsive",
+    motion_scale: 0.876,
+    gesture_budget: 1,
+  },
   provider: "mock",
   model: "mock-v1",
   request_id: "request-1",
@@ -116,6 +134,7 @@ function createCallbacks() {
   const memoryNotices: string[] = [];
   const memoryBusy: boolean[] = [];
   const performances: PerformancePlan[] = [];
+  const continuities: EmotionalContinuity[] = [];
   let conversationResets = 0;
   let cancellations = 0;
   let partialDiscards = 0;
@@ -133,6 +152,7 @@ function createCallbacks() {
     onBusyChange: (value) => busy.push(value),
     onCharacterState: (state) => states.push(state),
     onPerformancePlan: (performance) => performances.push(performance),
+    onContinuityChange: (continuity) => continuities.push(continuity),
     onError: (message) => errors.push(message),
     onClearError: vi.fn(),
     onLatency: (latencyMs) => latencies.push(latencyMs),
@@ -164,6 +184,7 @@ function createCallbacks() {
     memoryNotices,
     memoryBusy,
     performances,
+    continuities,
     get conversationResets() {
       return conversationResets;
     },
@@ -205,6 +226,22 @@ it("validates and sends the latest text message to the backend", async () => {
   const client = new DialogueClient(fetchMock, "/api", 1000);
 
   await expect(client.sendMessage("テスト", "session-test-alpha", "detailed")).resolves.toEqual(RESPONSE);
+});
+
+it("rejects an unbounded emotional continuity response", async () => {
+  const invalid = {
+    ...RESPONSE,
+    continuity: { ...RESPONSE.continuity, gaze_behavior: "arbitrary_bone_script" },
+  };
+  const client = new DialogueClient(
+    vi.fn(async () => new Response(JSON.stringify(invalid), { status: 200 })),
+    "/api",
+    1000,
+  );
+
+  await expect(client.sendMessage("テスト", "session-test-alpha", "balanced")).rejects.toBeInstanceOf(
+    DialogueApiError,
+  );
 });
 
 it("parses chunked NDJSON and exposes only validated text deltas", async () => {
@@ -261,13 +298,17 @@ it("resets one backend conversation session", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     expect(String(input)).toBe("/api/dialogue/sessions/session-test-alpha");
     expect(init?.method).toBe("DELETE");
-    return new Response(JSON.stringify({ session_id: "session-test-alpha", cleared_turns: 2 }), { status: 200 });
+    return new Response(
+      JSON.stringify({ session_id: "session-test-alpha", cleared_turns: 2, cleared_emotional_state: true }),
+      { status: 200 },
+    );
   });
   const client = new DialogueClient(fetchMock, "/api", 1000);
 
   await expect(client.resetSession("session-test-alpha")).resolves.toEqual({
     session_id: "session-test-alpha",
     cleared_turns: 2,
+    cleared_emotional_state: true,
   });
 });
 
@@ -357,7 +398,7 @@ describe("DialogueController", () => {
         onTextDelta("にちは。");
         return RESPONSE;
       },
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const observed = createCallbacks();
     const controller = new DialogueController(gateway, observed.callbacks);
@@ -385,7 +426,7 @@ describe("DialogueController", () => {
         onTextDelta("にちは。");
         return RESPONSE;
       },
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     let onSpeechStarted: (() => void) | undefined;
     const speech: SpeechOutput = {
@@ -440,7 +481,7 @@ describe("DialogueController", () => {
           );
         }),
       cancelActiveDialogue,
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const speech: SpeechOutput = {
       speak: vi.fn(),
@@ -477,7 +518,7 @@ describe("DialogueController", () => {
           finishResponse = () => resolve(RESPONSE);
         }),
       cancelActiveDialogue: async (sessionId) => ({ session_id: sessionId, cancelled: false }),
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const observed = createCallbacks();
     const controller = new DialogueController(gateway, observed.callbacks);
@@ -505,7 +546,7 @@ describe("DialogueController", () => {
         sentStyles.push(responseStyle);
         return { ...RESPONSE, response_style: responseStyle };
       },
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const observed = createCallbacks();
     const controller = new DialogueController(gateway, observed.callbacks);
@@ -524,7 +565,7 @@ describe("DialogueController", () => {
       ...MEMORY_GATEWAY,
       getHealth: async () => READY_HEALTH,
       sendMessage: async () => RESPONSE,
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const observed = createCallbacks();
     const controller = new DialogueController(gateway, observed.callbacks);
@@ -560,7 +601,7 @@ describe("DialogueController", () => {
       sendMessage: async () => {
         throw new DialogueApiError("通信に失敗しました。", 503, "unavailable", "req-2");
       },
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const observed = createCallbacks();
     const controller = new DialogueController(gateway, observed.callbacks);
@@ -579,7 +620,7 @@ describe("DialogueController", () => {
       ...MEMORY_GATEWAY,
       getHealth: async () => READY_HEALTH,
       sendMessage: async () => RESPONSE,
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const speech: SpeechOutput = {
       speak: vi.fn(),
@@ -620,7 +661,7 @@ describe("DialogueController", () => {
       ...MEMORY_GATEWAY,
       getHealth: async () => READY_HEALTH,
       sendMessage: async () => happyResponse,
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
     };
     const observed = createCallbacks();
     const controller = new DialogueController(gateway, observed.callbacks);
@@ -630,6 +671,7 @@ describe("DialogueController", () => {
     await vi.waitFor(() => expect(observed.states).toContain("happy"));
 
     expect(observed.performances).toEqual([happyResponse.performance]);
+    expect(observed.continuities).toEqual([happyResponse.continuity]);
     controller.dispose();
   });
 
@@ -646,7 +688,7 @@ describe("DialogueController", () => {
       },
       resetSession: async (sessionId) => {
         resetSessions.push(sessionId);
-        return { session_id: sessionId, cleared_turns: 1 };
+        return { session_id: sessionId, cleared_turns: 1, cleared_emotional_state: true };
       },
     };
     const observed = createCallbacks();
@@ -673,7 +715,7 @@ describe("DialogueController", () => {
       ...MEMORY_GATEWAY,
       getHealth: async () => READY_HEALTH,
       sendMessage: async () => RESPONSE,
-      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0, cleared_emotional_state: false }),
       listMemories: async () => ({ items: [...stored], total: stored.length }),
       createMemory: async (content) => {
         const item = { ...MEMORY_ITEM, content };

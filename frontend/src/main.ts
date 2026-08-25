@@ -60,6 +60,10 @@ const dialogue = new DialogueController(
       performanceTimeline?.prepare(performance);
       ui.updatePerformance(performance);
     },
+    onContinuityChange: (continuity) => {
+      viewer?.setEmotionalContinuity(continuity);
+      ui.updateEmotionalContinuity(continuity);
+    },
     onError: (message) => {
       ui.showDialogueError(message);
       ui.addWarning(message);
@@ -78,6 +82,7 @@ const dialogue = new DialogueController(
     },
     onConversationReset: () => {
       performanceTimeline?.clear();
+      viewer?.resetEmotionalContinuity();
       ui.resetDialogueConversation();
       ui.showNotice("新しい会話を始めました。前の会話の記憶は消去されています。");
     },
@@ -104,7 +109,7 @@ try {
   performanceTimeline = new PerformanceTimelineController({
     preparePerformance: (performance) => viewer?.preparePerformance(performance),
     playGesture: (gesture, intensity) => viewer?.playPerformanceGesture(gesture, intensity),
-    returnToIdle: () => viewer?.setState("idle"),
+    returnToBaseline: () => viewer?.returnToEmotionalBaseline(),
     reportPhase: (phase, cueIndex, cueTotal) => ui.updatePerformancePhase(phase, cueIndex, cueTotal),
   });
 
@@ -136,7 +141,7 @@ try {
       speech.stop();
       performanceTimeline?.clear();
       viewer?.setReducedMotionMode("system");
-      viewer?.setState("idle");
+      viewer?.returnToEmotionalBaseline();
     },
     setExpression: (name: string | null, weight: number) => viewer?.setManualExpression(name, weight) ?? false,
     setCamera: (settings: CameraSettings) => viewer?.setCameraSettings(settings) ?? settings,

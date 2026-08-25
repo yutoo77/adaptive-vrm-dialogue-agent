@@ -60,6 +60,25 @@ test("secondary controls stay behind progressive disclosure", async ({ page }) =
   await expect(page.locator("#app")).toHaveAttribute("data-state", "thinking");
 });
 
+test("short emotional residue remains visible without adding another control", async ({ page }) => {
+  await page.goto("/");
+  const input = page.getByRole("textbox", { name: "メッセージ" });
+  const send = page.getByRole("button", { name: "送信" });
+
+  await input.fill("今日は疲れた");
+  await send.click();
+  await expect(page.locator("#dialogue-log .is-assistant")).toHaveCount(1);
+  await expect(send).toBeEnabled();
+
+  await input.fill("そうなんだ");
+  await send.click();
+
+  await expect(page.locator("#dialogue-log .is-assistant")).toHaveCount(2);
+  await expect(page.locator("#app")).toHaveAttribute("data-continuity", "carried");
+  await expect(page.locator("#performance-source")).toHaveText("余韻");
+  await expect(page.locator("#performance-emotion")).toHaveText("やさしい");
+});
+
 test("explicit response style reaches the free Mock provider", async ({ page }) => {
   await page.goto("/");
 

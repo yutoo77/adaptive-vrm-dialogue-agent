@@ -18,11 +18,13 @@ export const PERFORMANCE_EMOTIONS = ["neutral", "happy", "gentle", "curious", "c
 export const PERFORMANCE_GESTURES = ["none", "small_nod", "head_tilt", "soft_bounce"] as const;
 export const VOICE_STYLES = ["neutral", "warm", "bright", "gentle", "serious"] as const;
 export const REDUCED_MOTION_MODES = ["system", "normal", "reduced"] as const;
+export const GAZE_BEHAVIORS = ["responsive", "engaged", "soft", "curious", "steady", "searching"] as const;
 
 export type PerformanceEmotion = (typeof PERFORMANCE_EMOTIONS)[number];
 export type PerformanceGesture = (typeof PERFORMANCE_GESTURES)[number];
 export type VoiceStyle = (typeof VOICE_STYLES)[number];
 export type ReducedMotionMode = (typeof REDUCED_MOTION_MODES)[number];
+export type GazeBehavior = (typeof GAZE_BEHAVIORS)[number];
 
 export interface PerformanceCue {
   readonly at: number;

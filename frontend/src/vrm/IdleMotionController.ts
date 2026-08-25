@@ -7,6 +7,7 @@ export class IdleMotionController {
   private nextBlinkAt = 2.8;
   private blinkStartedAt: number | null = null;
   private reducedMotion = false;
+  private continuityScale = 1;
 
   public constructor(private readonly random: RandomSource = Math.random) {
     this.scheduleNextBlink();
@@ -14,6 +15,10 @@ export class IdleMotionController {
 
   public setReducedMotion(enabled: boolean): void {
     this.reducedMotion = enabled;
+  }
+
+  public setContinuityScale(scale: number): void {
+    this.continuityScale = Math.max(0.4, Math.min(1.2, scale));
   }
 
   public reset(): void {
@@ -24,7 +29,7 @@ export class IdleMotionController {
 
   public update(delta: number, preset: MotionPreset): IdleMotionFrame {
     this.elapsed += Math.max(0, delta) * preset.speed;
-    const motionFactor = this.reducedMotion ? 0.18 : 1;
+    const motionFactor = (this.reducedMotion ? 0.18 : 1) * this.continuityScale;
     const blinkWeight = this.updateBlink(preset.blink);
 
     const breathOffset = Math.sin(this.elapsed * 1.55) * 0.0065 * preset.breath * motionFactor;
