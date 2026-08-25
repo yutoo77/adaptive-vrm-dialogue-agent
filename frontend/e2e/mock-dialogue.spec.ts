@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+const SILENT_WAV = createSilentWav(320);
+
 test("free Mock dialogue completes one browser round trip", async ({ page }) => {
   const runtimeErrors: string[] = [];
   const failedResponses: Array<{ readonly url: string; readonly status: number }> = [];
@@ -89,6 +91,48 @@ test("explicit response style reaches the free Mock provider", async ({ page }) 
   await expect(style).toBeEnabled();
 });
 
+test("a closed sentence reaches speech while the reply is still streaming", async ({ page }) => {
+  const synthesizedTexts: string[] = [];
+  await page.addInitScript(() => {
+    const state = window as unknown as { speechRequestedWhileStreaming: boolean };
+    state.speechRequestedWhileStreaming = false;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).endsWith("/api/speech")) {
+        state.speechRequestedWhileStreaming ||= Boolean(
+          document.querySelector("#dialogue-log .is-assistant.is-streaming"),
+        );
+      }
+      return originalFetch(input, init);
+    };
+  });
+  await page.route("**/api/speech", async (route) => {
+    const payload = route.request().postDataJSON() as { text?: unknown };
+    if (typeof payload.text === "string") synthesizedTexts.push(payload.text);
+    await route.fulfill({
+      status: 200,
+      contentType: "audio/wav",
+      headers: {
+        "x-speech-timing-version": "1",
+        "x-speech-duration-ms": "320",
+      },
+      body: SILENT_WAV,
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("textbox", { name: "メッセージ" }).fill("こんにちは");
+  await page.getByRole("button", { name: "送信" }).click();
+
+  await expect(page.locator("#dialogue-log .is-assistant p")).toContainText("今日はどんなことを話そうか");
+  await expect.poll(() => synthesizedTexts.length).toBeGreaterThanOrEqual(1);
+  expect(synthesizedTexts[0]).toBe("こんにちは。");
+  expect(await page.evaluate(() =>
+    (window as unknown as { speechRequestedWhileStreaming: boolean }).speechRequestedWhileStreaming,
+  )).toBe(true);
+  await expect(page.locator("#latency-speech-start")).not.toHaveText("—");
+});
+
 test("user can cancel an active response and return to idle", async ({ page }) => {
   let releaseDialogue: (() => void) | null = null;
   await page.route("**/api/dialogue/sessions/*/active", async (route) => {
@@ -152,3 +196,24 @@ test("mobile keeps the conversation composer in the first viewport", async ({ pa
     });
   expect(environmentAnimationDurationMs).toBeLessThanOrEqual(0.001);
 });
+
+function createSilentWav(durationMs: number): Buffer {
+  const sampleRate = 8_000;
+  const sampleCount = Math.max(1, Math.round(sampleRate * durationMs / 1000));
+  const dataSize = sampleCount * 2;
+  const wav = Buffer.alloc(44 + dataSize);
+  wav.write("RIFF", 0, "ascii");
+  wav.writeUInt32LE(36 + dataSize, 4);
+  wav.write("WAVE", 8, "ascii");
+  wav.write("fmt ", 12, "ascii");
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36, "ascii");
+  wav.writeUInt32LE(dataSize, 40);
+  return wav;
+}

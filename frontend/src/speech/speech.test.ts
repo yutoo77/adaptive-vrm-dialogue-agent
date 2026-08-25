@@ -310,6 +310,144 @@ describe("SpeechController", () => {
     controller.dispose();
     expect(lipSync.dispose).toHaveBeenCalledOnce();
   });
+
+  it("synthesizes and plays a closed sentence before the final reply arrives", async () => {
+    const firstAudio = new FakeAudio(undefined, 1.5);
+    const secondAudio = new FakeAudio(undefined, 1.2);
+    const audios = [firstAudio, secondAudio];
+    const synthesized: string[] = [];
+    const observed = createObservedCallbacks();
+    const onStarted = vi.fn();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async (text) => {
+          synthesized.push(text);
+          return { audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing: null };
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => audios.shift() ?? secondAudio,
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming(onStarted);
+    controller.appendStreamingText("最初の文です");
+    expect(synthesized).toEqual([]);
+    controller.appendStreamingText("。続き");
+
+    await vi.waitFor(() => expect(firstAudio.play).toHaveBeenCalledOnce());
+    expect(synthesized).toEqual(["最初の文です。"]);
+    expect(onStarted).toHaveBeenCalledOnce();
+    expect(observed.playback).toEqual([]);
+
+    controller.completeStreaming("最初の文です。続き", {
+      emotion: "happy",
+      intensity: 0.5,
+      gesture: "soft_bounce",
+      voice_style: "bright",
+      cues: [],
+    });
+    expect(observed.playback[0]).toMatchObject({ type: "started" });
+    firstAudio.emit("ended");
+
+    await vi.waitFor(() => expect(secondAudio.play).toHaveBeenCalledOnce());
+    expect(synthesized).toEqual(["最初の文です。", "続き"]);
+    expect(secondAudio.playbackRate).toBeCloseTo(1.03);
+    secondAudio.emit("ended");
+
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.action).toBe("replay"));
+    expect(observed.playback.at(-1)).toEqual({ type: "completed" });
+  });
+
+  it("aborts provisional synthesis and discards replay data", async () => {
+    let synthesisSignal: AbortSignal | undefined;
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async (_text, signal) => {
+          synthesisSignal = signal;
+          return await new Promise<SpeechSynthesisResult>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => new FakeAudio(),
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming();
+    controller.appendStreamingText("破棄する文です。");
+    await vi.waitFor(() => expect(synthesisSignal).toBeDefined());
+
+    controller.discard();
+
+    expect(synthesisSignal?.aborted).toBe(true);
+    controller.toggle();
+    expect(observed.playback).toEqual([]);
+  });
+
+  it("fails the streaming speech queue without failing the text response", async () => {
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async () => {
+          throw new SpeechApiError("VOICEVOXを起動してください。", 503, "voicevox_unreachable");
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => new FakeAudio(),
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming();
+    controller.appendStreamingText("音声だけ失敗します。");
+
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("error"));
+    expect(observed.statuses.at(-1)?.message).toContain("Text回答はそのまま確認できます");
+    expect(observed.warnings).toEqual(["VOICEVOXを起動してください。"]);
+    expect(observed.playback.at(-1)).toEqual({ type: "failed" });
+  });
+
+  it("falls back to the validated full reply when streamed text differs", async () => {
+    const provisionalAudio = new FakeAudio();
+    const finalAudio = new FakeAudio();
+    const audios = [provisionalAudio, finalAudio];
+    const synthesized: string[] = [];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async (text) => {
+          synthesized.push(text);
+          return { audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing: null };
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => audios.shift() ?? finalAudio,
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming();
+    controller.appendStreamingText("途中の文です。");
+    await vi.waitFor(() => expect(provisionalAudio.play).toHaveBeenCalledOnce());
+
+    controller.completeStreaming("確定した文です。", {
+      emotion: "neutral",
+      intensity: 0.3,
+      gesture: "none",
+      voice_style: "neutral",
+      cues: [],
+    });
+
+    await vi.waitFor(() => expect(finalAudio.play).toHaveBeenCalledOnce());
+    expect(provisionalAudio.pause).toHaveBeenCalled();
+    expect(synthesized).toEqual(["途中の文です。", "確定した文です。"]);
+    expect(observed.warnings.at(-1)).toContain("途中表示と確定した本文が一致しなかった");
+  });
 });
 
 describe("speech duration", () => {

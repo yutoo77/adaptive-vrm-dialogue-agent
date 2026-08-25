@@ -331,6 +331,55 @@ describe("DialogueController", () => {
     controller.dispose();
   });
 
+  it("feeds closed text toward streaming speech and finalizes it with the validated plan", async () => {
+    const gateway: DialogueGateway = {
+      ...MEMORY_GATEWAY,
+      getHealth: async () => READY_HEALTH,
+      sendMessage: async () => RESPONSE,
+      streamMessage: async (_message, _sessionId, _responseStyle, onTextDelta) => {
+        onTextDelta("こん");
+        await Promise.resolve();
+        onTextDelta("にちは。");
+        return RESPONSE;
+      },
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+    };
+    let onSpeechStarted: (() => void) | undefined;
+    const speech: SpeechOutput = {
+      speak: vi.fn(),
+      beginStreaming: vi.fn((onStarted) => {
+        onSpeechStarted = onStarted;
+      }),
+      appendStreamingText: vi.fn((delta) => {
+        if (delta === "にちは。") onSpeechStarted?.();
+      }),
+      completeStreaming: vi.fn(),
+      toggle: vi.fn(),
+      stop: vi.fn(),
+      discard: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const observed = createCallbacks();
+    const controller = new DialogueController(gateway, observed.callbacks, speech);
+
+    await controller.initialize();
+    expect(controller.send("テスト")).toBe(true);
+    await vi.waitFor(() => expect(observed.busy.at(-1)).toBe(false));
+
+    expect(speech.beginStreaming).toHaveBeenCalledOnce();
+    expect(speech.appendStreamingText).toHaveBeenNthCalledWith(1, "こん");
+    expect(speech.appendStreamingText).toHaveBeenNthCalledWith(2, "にちは。");
+    expect(speech.completeStreaming).toHaveBeenCalledWith(RESPONSE.reply, RESPONSE.performance);
+    expect(speech.speak).not.toHaveBeenCalled();
+    expect(observed.responseTimings.map(([stage]) => stage)).toEqual([
+      "first-text",
+      "speech-start",
+      "text-complete",
+    ]);
+    expect(observed.states).toContain("speaking");
+    controller.dispose();
+  });
+
   it("cancels an active response without adding an assistant message or error", async () => {
     const cancelActiveDialogue = vi.fn(async (sessionId: string) => ({
       session_id: sessionId,

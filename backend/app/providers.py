@@ -265,7 +265,13 @@ class OpenAIProvider:
             remaining = reply.text[len(visible_text) :]
             if remaining:
                 yield ProviderTextDelta(remaining)
-        elif not visible_text:
+        elif visible_text:
+            raise ProviderError(
+                502,
+                "stream_mismatch",
+                "AIの途中応答と確定応答が一致しませんでした。もう一度試してください。",
+            )
+        else:
             yield ProviderTextDelta(reply.text)
         yield ProviderStreamCompleted(reply)
 
@@ -353,16 +359,27 @@ class _StructuredReplyDeltaDecoder:
 
     def __init__(self) -> None:
         self._buffer = ""
-        self._decoded = ""
+        self._raw_decoded = ""
+        self._pending_whitespace = ""
+        self._started = False
 
     def feed(self, raw_delta: str) -> str:
         self._buffer += raw_delta
         decoded = _decode_reply_prefix(self._buffer)
-        if decoded is None or not decoded.startswith(self._decoded):
+        if decoded is None or not decoded.startswith(self._raw_decoded):
             return ""
-        delta = decoded[len(self._decoded) :]
-        self._decoded = decoded
-        return delta
+        raw_suffix = decoded[len(self._raw_decoded) :]
+        self._raw_decoded = decoded
+        emitted = ""
+        for character in raw_suffix:
+            if character.isspace():
+                if self._started:
+                    self._pending_whitespace += character
+                continue
+            self._started = True
+            emitted += self._pending_whitespace + character
+            self._pending_whitespace = ""
+        return emitted
 
 
 def _decode_reply_prefix(value: str) -> str | None:
