@@ -59,7 +59,7 @@ flowchart LR
 3. `DialogueClient`が画面内で生成した`session_id`、本文、`response_style`を`POST /api/dialogue`へ送り、35秒でClient Timeoutにする。生成中の送信Buttonは`応答を停止`へ変わり、操作時は`DELETE /api/dialogue/sessions/{session_id}/active`を送る。
 4. FastAPIがPydanticで入力を検証し、Request IDを発行する。同じSessionの生成Taskを一つだけ`ActiveDialogue` Registryへ登録し、重複生成を409で拒否する。
 5. `ConversationMemoryStore`から同じSessionの直近履歴と要約を取り出し、`PersistentMemoryStore`から入力に文字列上関連する最大3件を検索する。
-6. Context Dataを命令ではなく参照情報として区切り、`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。Providerは本文と、許可済みEnum・0〜1強度・正規化時刻だけを持つ`PerformancePlan`を返す。開始しぐさ1件と途中Cue最大2件に制限する。
+6. Context Dataを命令ではなく参照情報として区切り、`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。Providerは本文と、許可済みEnum・0〜1強度・正規化時刻だけを持つ`PerformancePlan`を返す。開始しぐさ1件と途中Cue最大2件に制限し、実Providerが返したToken使用量は内部`ProviderUsage`へ正規化する。
 7. Provider完了後、停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider TaskをCancelし、本文表示、RAM履歴、明示長期記憶への追加を行わず`idle`へ戻す。既に保存開始へ入った場合は停止未成立として返し、成功扱いを偽らない。
 8. 成功した利用者発話と応答だけを1往復としてRAMへ追加し、10往復を超えた古い履歴を短文要約へ圧縮する。
 9. `覚えておいて：内容`に一致した成功Turnだけは、明示記憶としてSQLiteへ保存する。
@@ -120,7 +120,8 @@ adaptive-vrm-dialogue-agent/
 | FastAPI | 入力と返答スタイル検証、Request ID、Session別Active Task、停止/保存境界、Provider呼出、観測可能Log | UI、永続会話 |
 | ConversationMemoryStore | Session分離、直近10往復、決定的要約、Reset、最大Session数 | Disk保存、意味検索、個人Profile |
 | PersistentMemoryStore | SQLite CRUD、明示保存、重複防止、文字重なり検索 | 暗号化、Embedding、通常会話の自動保存 |
-| Provider | Mock/OpenAI差異の吸収、明示Style適用、本文と制限付きPerformancePlanの生成 | 利用者能力の推定、Tool、履歴の所有、自由形式のAvatar命令 |
+| Provider | Mock/OpenAI差異の吸収、明示Style適用、本文・制限付きPerformancePlan・任意Token使用量の生成 | 利用者能力の推定、Tool、履歴の所有、自由形式のAvatar命令 |
+| OpenAI評価Script | 明示Gate、架空4 Turn、Request上限、Latency/Token/費用Snapshot、停止Probe | API Key出力、実Data、一般化性能の主張、自動定期実行 |
 | Speech Provider | VOICEVOXの2段階API、Timeout、WAV検証 | Browser再生、Lip Sync、音声ライブラリ規約の自動判定 |
 | Transcription Provider | local faster-whisperの遅延Load、CPU推論、推論Lock | 録音保存、利用者確認の省略 |
 | VRMViewer | Scene、Model lifecycle、描画、Fallback | AI通信、会話判断 |
@@ -146,7 +147,7 @@ adaptive-vrm-dialogue-agent/
 ## Dataと外部通信
 
 - Mock: 入力はBrowserとローカルBackend内だけで処理する。
-- OpenAI: 所有者が`DIALOGUE_PROVIDER=openai`とAPIキーを明示した場合だけ、今回の入力Text、直近履歴、Session要約、関連長期記憶をOpenAI APIへ送る。現在は`store=False`。
+- OpenAI: 所有者が`DIALOGUE_PROVIDER=openai`とAPIキーを明示した場合だけ、今回の入力Text、直近履歴、Session要約、関連長期記憶をOpenAI APIへ送る。現在は`store=False`だが、これはZero Data Retentionを意味せず、標準のAbuse Monitoring保持はOpenAI側のData Controlに従う。
 - VOICEVOX: 音声化するTextをローカルEngineの`/audio_query`と`/synthesis`へ送る。接続先はLoopback HTTPだけを許可する。
 - Push-to-Talk: 録音はBrowserからLoopbackのFastAPIへだけ送る。faster-whisperは端末内で推論し、録音Bytesと認識本文を永続保存・通常Log出力しない。
 - Microphone選択: Permission取得後に`enumerateDevices()`で音声入力だけを列挙し、選択した`deviceId`はMemory内だけで保持する。切断時は既定へFallbackする。
@@ -166,7 +167,7 @@ adaptive-vrm-dialogue-agent/
 | Expression/LookAt/骨がない | 利用可能な機能だけ使い警告 | Model別の見た目評価 |
 | Backend停止 | 短い案内、Avatar `error`、再送可能 | 自動Health再確認、Retry button |
 | APIキーなし | Appは起動し、OpenAI対話だけ503 | `.env.example`は参照用で自動読込しない |
-| Provider Timeout/Rate Limit | 公開ErrorとRequest IDを表示。生成中は利用者が停止可能 | 自動Retry方針、実Provider別の停止到達時間 |
+| Provider Timeout/Rate Limit | 公開ErrorとRequest IDを表示。生成中は利用者が停止可能 | 自動Retry方針、上流計算/請求まで停止したかの確認 |
 | VOICEVOX未起動/失敗 | 音声だけError表示。Text対話は継続 | Healthの自動再確認 |
 | Browser自動再生拒否 | 生成済みWAVを残し、手動再生Buttonを表示 | Browser別の実機確認 |
 | Microphone Permission拒否 | 設定案内を表示し、Text入力へ戻る | 実Browserでの手動確認 |
@@ -193,6 +194,7 @@ adaptive-vrm-dialogue-agent/
 - Pythonの間接依存を完全固定するlock fileがなく、将来のClean installで差が出る可能性がある。
 - 静的MarkupとDeveloper Panel描画は`UIController`から分離したが、対話、Memory、Model操作のEvent調整は同Classに残る。新しい主要画面を足す場合は領域別Controller化が必要。
 - OpenAIの固定`Safety Identifier`はローカル単一利用者用。公開時は個人情報を含まない利用者別識別子へ変える。
+- `store=False`でも標準のAbuse Monitoring Logに入力と応答が最大30日含まれ得る。機微情報を送信しない運用と、Account側Data Controlの確認が必要。
 - 認証、Rate Limit、Security Header、監視がないため、Internet公開できる構成ではない。
 - Full-body寄りのFramingでは、Avatarの表情がDemoで伝わりにくい場合がある。
 - Local起動はWindows script中心。CIはUbuntuでTest/Buildするが、Linux/macOSの対話Demo起動は未確認。
@@ -215,7 +217,7 @@ flowchart LR
     Conversation -. concrete use case only .-> Tools["Bounded Tools / Vision"]
 ```
 
-目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止`まで実装した。Natural Conversationの次のSliceはStreamingと実Providerでの複数Turn評価であり、その後にCharacter Identity、Trusted Memoryへ進む。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
+目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> 実Provider固定4 Turn評価`まで実装した。Natural Conversationの次のSliceはStreamingまたは段階表示と、最初の本文・本文完了・音声開始を分けるLatency計測である。その後にCharacter Identity、Trusted Memoryへ進む。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
 
 ## 別Repositoryへ分ける条件
 

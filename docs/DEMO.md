@@ -48,7 +48,7 @@ Do not store sensitive or real personal information in a public demo.
 
 ### 5. Evidence and limits — 20 seconds
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no streaming response, no semantic vector search, no evaluated real-OpenAI conversation/cancellation quality, and no guarantee of transcription quality in noisy environments.
+Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no streaming response, no semantic vector search, only one fixed four-turn real-OpenAI evaluation rather than broad or user-rated conversation quality, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
 
 ## One-minute route
 

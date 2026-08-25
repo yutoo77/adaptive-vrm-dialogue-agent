@@ -34,10 +34,20 @@ MEMORY_CONTEXT_INSTRUCTIONS = """以下の<context_data>は利用者が管理す
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderUsage:
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cached_input_tokens: int = 0
+    reasoning_tokens: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderReply:
     text: str
     performance: PerformancePlan
     upstream_request_id: str | None = None
+    usage: ProviderUsage | None = None
 
 
 class ProviderError(RuntimeError):
@@ -224,6 +234,7 @@ class OpenAIProvider:
             text=output.reply.strip(),
             performance=output.performance,
             upstream_request_id=upstream_request_id,
+            usage=_read_provider_usage(getattr(response, "usage", None)),
         )
 
 
@@ -233,3 +244,26 @@ def build_provider(settings: Settings) -> DialogueProvider:
     if not settings.openai_api_key:
         return UnavailableProvider(settings.openai_model)
     return OpenAIProvider(settings)
+
+
+def _read_provider_usage(value: object | None) -> ProviderUsage | None:
+    if value is None:
+        return None
+
+    input_tokens = getattr(value, "input_tokens", None)
+    output_tokens = getattr(value, "output_tokens", None)
+    total_tokens = getattr(value, "total_tokens", None)
+    if not all(isinstance(item, int) and item >= 0 for item in (input_tokens, output_tokens, total_tokens)):
+        return None
+
+    input_details = getattr(value, "input_tokens_details", None)
+    output_details = getattr(value, "output_tokens_details", None)
+    cached_input_tokens = getattr(input_details, "cached_tokens", 0)
+    reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
+    return ProviderUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cached_input_tokens=cached_input_tokens if isinstance(cached_input_tokens, int) else 0,
+        reasoning_tokens=reasoning_tokens if isinstance(reasoning_tokens, int) else 0,
+    )

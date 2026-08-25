@@ -10,7 +10,7 @@ Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声
 
 このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
 
-現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止までを実装しています。実Providerでの自然な複数Turn会話、Streaming、独自Avatarは今後の評価対象であり、完成済みとは主張しません。
+現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止までを実装しています。実OpenAI Providerは架空Dataによる固定4 Turnで文脈保持・不確実性・使用量・Latencyを評価済みです。多様な会話での自然さ、Streaming、独自Avatarは今後の評価対象であり、完成済みとは主張しません。
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
@@ -48,7 +48,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 | 領域 | 実装内容 |
 | --- | --- |
-| 対話 | Text入力、Mock/OpenAI Provider切替、明示選択する返答スタイル4種、生成中の応答停止、Timeout、Request ID、Frontend/Backend双方の応答検証 |
+| 対話 | Text入力、Mock/OpenAI Provider切替、明示選択する返答スタイル4種、生成中の応答停止、Token使用量計測、Timeout、Request ID、Frontend/Backend双方の応答検証 |
 | Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認 |
 | Voice output | ローカルVOICEVOX、接続確認、自動再生、停止、再再生、Text回答を残すFallback |
 | Lip Sync | VOICEVOX母音Timingを`aa / ih / ou / ee / oh`へ同期し、音量Envelopeで開口量を調整 |
@@ -81,7 +81,7 @@ VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、�
 
 ### 5. Local-firstとProvider境界
 
-既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。VOICEVOX接続先もLoopback HTTPだけを許可します。
+既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。実Provider評価も、明示Gate、固定Request数、架空Data、Token使用量と費用記録を持つ専用Scriptへ分離しています。VOICEVOX接続先もLoopback HTTPだけを許可します。
 
 ### 6. 利用者を推測しないAdaptive Interaction
 
@@ -237,6 +237,10 @@ $env:OPENAI_MODEL = "gpt-5.6-luna"
 
 KeyはBackendだけが読みます。`VITE_`で始まる環境変数、README、Screenshot、Chat、GitへKeyを入れないでください。OpenAI Providerでは入力、直近履歴、Session要約、関連すると判定した長期記憶最大3件が外部送信対象になります。API利用料金が発生します。
 
+2026-08-25の固定評価では`gpt-5.6-luna`を4 Turn使用し、5,275 input / 455 output tokens、完了Requestの保守的な費用見積りは$0.001601、完了応答Latency中央値は3,496msでした。料金は変わり得るため、実行前に[公式Model Page](https://developers.openai.com/api/docs/models/gpt-5.6-luna)を確認してください。再現手順と停止Requestを費用へ含められない理由は[実OpenAI評価記録](docs/evaluations/real-openai-dialogue-2026-08-25.md)にあります。
+
+`store=False`を指定していますが、これはZero Data Retentionと同義ではありません。OpenAIの[Data controls](https://developers.openai.com/api/docs/guides/your-data)では、明示Opt-inがないAPI DataはModel Trainingへ使わない一方、標準のAbuse Monitoring LogにPrompt/Responseが最大30日含まれ得ると説明されています。機微情報を送らないでください。
+
 設定名は[backend/.env.example](backend/.env.example)で確認できます。Applicationは`.env`を自動読込しません。
 
 ## Privacyと外部通信
@@ -244,7 +248,7 @@ KeyはBackendだけが読みます。`VITE_`で始まる環境変数、README、
 | 機能 | 既定 | 送信・保存 |
 | --- | --- | --- |
 | Mock dialogue | 有効 | BrowserとLocal Backend内。通常会話はRAMのみ |
-| OpenAI dialogue | 無効 | 明示設定時だけText文脈をOpenAI APIへ送信 |
+| OpenAI dialogue | 無効 | 明示設定時だけText文脈をOpenAI APIへ送信。`store=False`だが標準のAbuse Monitoring保持は別 |
 | VOICEVOX | 任意 | Textを`127.0.0.1`のEngineへ送信。WAVをRepositoryへ保存しない |
 | Push-to-Talk | 任意 | 音声をLoopback Backendへ送り、Local faster-whisperで認識。録音を保存しない |
 | VRM | 任意 | Browser内で読込。外部Uploadしない |
@@ -277,12 +281,13 @@ npm audit
 2026-08-25時点の確認結果:
 
 - Frontend: TypeScript、ESLint、Vitest **64件**、Playwright browser smoke **5件**、production build成功
-- Backend: Ruff、Pytest **53件**、`pip check`成功
+- Backend: Ruff、Pytest **54件**、`pip check`成功
 - Dependency audit: npm **0件**、pip-audit **0件**の既知脆弱性
 - Browser: Desktop、390px幅、319px幅、実VRM、Mock対話、VOICEVOX、5母音Lip Sync、自動演技を確認
 - Browser console: warning/error **0件**
 - 実VOICEVOX固定10件: 合成・Timing検証 **10/10**
 - 自動演技固定10文: Schema/期待分類 **10/10**
+- 実OpenAI固定4 Turn: 完了 **4/4**、固定品質Check **21/21**、完了応答Latency中央値 **3,496ms**、既知費用上限 **$0.001601**
 
 固定Scenarioの成功は未知入力への一般化を保証しません。成功例だけでなく、否定表現・複合感情・Timing欠損・Stop/Failureを評価記録に残しています。
 
@@ -296,6 +301,7 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 - [Prosody Lip Sync / 5母音とアクセント句](docs/evaluations/prosody-lip-sync-2026-08-20.md)
 - [Adaptive Interaction / 明示4スタイルと境界](docs/evaluations/adaptive-interaction-2026-08-25.md)
 - [Natural Conversation / 生成中の応答停止](docs/evaluations/natural-conversation-cancel-2026-08-25.md)
+- [Natural Conversation / 実OpenAI固定4 Turnと費用](docs/evaluations/real-openai-dialogue-2026-08-25.md)
 - [Speech input方式の選定](docs/speech-input-decision.md)
 
 ## Repository構成
@@ -332,7 +338,7 @@ adaptive-vrm-dialogue-agent/
 - faster-whisper `small`は、検証した5.621秒音声のAPI経由認識に約6.8秒かかりました。Noiseを含む固定マイク評価は未完了です。
 - SQLiteは暗号化していません。機微情報の保存には使えません。
 - 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
-- 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。Mockの差は固定Demoで、実OpenAI応答品質は未評価です。
+- 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。実OpenAIは架空Dataの固定4 Turnを1回評価しただけで、多様な入力、再現分散、利用者が感じる自然さは未評価です。
 - 自動演技のMock判定は日本語Keyword Ruleです。皮肉や未知の言い換えを正しく理解するとは限りません。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
 - production JavaScriptは約854kBで、Viteの500kB警告が出ます。
