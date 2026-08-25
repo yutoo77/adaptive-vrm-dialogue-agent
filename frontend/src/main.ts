@@ -28,7 +28,6 @@ const speech = new SpeechController(
     onStatusChange: (status) => ui.updateSpeechStatus(status),
     onPlaybackChange: (event) => performanceTimeline?.handlePlayback(event),
     onWarning: (message) => ui.addWarning(message),
-    onLatency: (latencyMs) => ui.updateLatency("speech", latencyMs),
   },
   lipSync,
 );
@@ -49,6 +48,9 @@ const dialogue = new DialogueController(
   {
     onConnectionChange: (health, errorMessage) => ui.updateDialogueConnection(health, errorMessage),
     onMessage: (role, text) => ui.appendDialogueMessage(role, text),
+    onPartialAssistantMessage: (text) => ui.updateStreamingAssistantMessage(text),
+    onCompleteAssistantMessage: (text) => ui.completeStreamingAssistantMessage(text),
+    onDiscardPartialAssistantMessage: () => ui.discardStreamingAssistantMessage(),
     onBusyChange: (busy) => ui.updateDialogueBusy(busy),
     onCharacterState: (state) => {
       if (state === "thinking" || state === "error") performanceTimeline?.clear();
@@ -63,7 +65,7 @@ const dialogue = new DialogueController(
       ui.addWarning(message);
     },
     onClearError: () => ui.clearDialogueError(),
-    onLatency: (latencyMs) => ui.updateLatency("dialogue", latencyMs),
+    onResponseTiming: (stage, latencyMs) => ui.updateLatency(stage, latencyMs),
     onMemoryChange: (turns, maxTurns) => ui.updateDialogueMemory(turns, maxTurns),
     onSummaryChange: (available) => ui.updateDialogueSummary(available),
     onPersistentMemoriesChange: (items) => ui.updatePersistentMemories(items),

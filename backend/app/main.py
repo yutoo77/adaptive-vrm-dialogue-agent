@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Path, Response, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.config import Settings
 from app.conversation import ConversationMemoryStore
@@ -16,7 +20,15 @@ from app.persistent_memory import (
     PersistentMemoryStore,
     extract_explicit_memory,
 )
-from app.providers import DialogueProvider, ProviderError, ProviderReply, build_provider
+from app.providers import (
+    DialogueProvider,
+    ProviderError,
+    ProviderReply,
+    ProviderStreamCompleted,
+    ProviderTextDelta,
+    build_provider,
+    stream_provider_reply,
+)
 from app.schemas import (
     DialogueCancellationResponse,
     DialogueRequest,
@@ -54,13 +66,18 @@ ALLOWED_TRANSCRIPTION_MEDIA_TYPES = {"audio/webm", "audio/ogg", "audio/mp4", "au
 
 @dataclass
 class _ActiveDialogue:
-    provider_task: asyncio.Task[ProviderReply] | None = None
+    provider_task: asyncio.Task[object] | None = None
     cancel_requested: bool = False
     committing: bool = False
 
 
 class _DialogueCancelled(Exception):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderStreamFailure:
+    error: BaseException
 
 
 def create_app(
@@ -236,6 +253,8 @@ def create_app(
                 model=resolved_provider.model,
                 request_id=request_id,
                 latency_ms=latency_ms,
+                first_text_ms=latency_ms,
+                text_complete_ms=latency_ms,
                 session_id=request.session_id,
                 memory_turns=memory_turns,
                 memory_max_turns=resolved_conversation_store.max_turns,
@@ -247,6 +266,220 @@ def create_app(
             async with active_dialogue_lock:
                 if active_dialogues.get(request.session_id) is active_dialogue:
                     active_dialogues.pop(request.session_id, None)
+
+    @app.post("/api/dialogue/stream")
+    async def dialogue_stream(request: DialogueRequest) -> StreamingResponse:
+        request_id = uuid4().hex
+        started_at = perf_counter()
+        active_dialogue = _ActiveDialogue()
+
+        async with active_dialogue_lock:
+            if request.session_id in active_dialogues:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "dialogue_in_progress",
+                        "message": "この会話では既に応答を生成しています。",
+                        "request_id": request_id,
+                    },
+                )
+            active_dialogues[request.session_id] = active_dialogue
+
+        async def stream_body() -> AsyncIterator[bytes]:
+            provider_task: asyncio.Task[object] | None = None
+            first_text_ms: int | None = None
+            text_complete_ms: int | None = None
+            try:
+                yield _ndjson(
+                    {
+                        "type": "start",
+                        "request_id": request_id,
+                        "provider": resolved_provider.name,
+                        "model": resolved_provider.model,
+                    }
+                )
+
+                async with state_lock:
+                    relevant_memories = resolved_persistent_memory_store.search(request.message)
+                    context = resolved_conversation_store.context(request.session_id, relevant_memories)
+
+                async with active_dialogue_lock:
+                    if active_dialogue.cancel_requested:
+                        raise _DialogueCancelled
+
+                queue: asyncio.Queue[ProviderTextDelta | ProviderStreamCompleted | _ProviderStreamFailure | None]
+                queue = asyncio.Queue()
+
+                async def pump_provider() -> None:
+                    try:
+                        async for event in stream_provider_reply(
+                            resolved_provider,
+                            request.message,
+                            context,
+                            request.response_style,
+                            request_id,
+                        ):
+                            queue.put_nowait(event)
+                    except BaseException as error:
+                        queue.put_nowait(_ProviderStreamFailure(error))
+                    finally:
+                        queue.put_nowait(None)
+
+                provider_task = asyncio.create_task(pump_provider())
+                async with active_dialogue_lock:
+                    if active_dialogue.cancel_requested:
+                        provider_task.cancel()
+                    active_dialogue.provider_task = provider_task
+
+                result: ProviderReply | None = None
+                while result is None:
+                    event = await queue.get()
+                    if active_dialogue.cancel_requested:
+                        raise _DialogueCancelled
+                    if event is None:
+                        raise ProviderError(
+                            502,
+                            "incomplete_stream",
+                            "AIの応答が完了する前に接続が終了しました。もう一度試してください。",
+                        )
+                    if isinstance(event, _ProviderStreamFailure):
+                        if isinstance(event.error, asyncio.CancelledError):
+                            if active_dialogue.cancel_requested:
+                                raise _DialogueCancelled
+                            raise event.error
+                        if isinstance(event.error, Exception):
+                            raise event.error
+                        raise RuntimeError("Provider stream failed with a non-standard error.")
+                    if isinstance(event, ProviderTextDelta):
+                        if not event.text:
+                            continue
+                        elapsed_ms = round((perf_counter() - started_at) * 1000)
+                        if first_text_ms is None:
+                            first_text_ms = elapsed_ms
+                        yield _ndjson(
+                            {
+                                "type": "text_delta",
+                                "delta": event.text,
+                                "elapsed_ms": elapsed_ms,
+                            }
+                        )
+                        continue
+                    result = event.reply
+                    text_complete_ms = round((perf_counter() - started_at) * 1000)
+
+                async with active_dialogue_lock:
+                    if active_dialogue.cancel_requested:
+                        raise _DialogueCancelled
+                    active_dialogue.committing = True
+
+                async with state_lock:
+                    explicit_memory = extract_explicit_memory(request.message)
+                    saved_memory = None
+                    if explicit_memory:
+                        saved_memory, _ = resolved_persistent_memory_store.create(
+                            explicit_memory,
+                            source="explicit",
+                        )
+                    resolved_persistent_memory_store.mark_used(
+                        tuple(memory.id for memory in relevant_memories)
+                    )
+                    memory_turns = resolved_conversation_store.append_turn(
+                        request.session_id,
+                        request.message,
+                        result.text,
+                    )
+                    session_summary_available = resolved_conversation_store.summary(request.session_id) is not None
+
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                resolved_first_text_ms = first_text_ms if first_text_ms is not None else text_complete_ms
+                response = DialogueResponse(
+                    reply=result.text,
+                    response_style=request.response_style,
+                    performance=result.performance,
+                    provider=resolved_provider.name,
+                    model=resolved_provider.model,
+                    request_id=request_id,
+                    latency_ms=latency_ms,
+                    first_text_ms=resolved_first_text_ms,
+                    text_complete_ms=text_complete_ms,
+                    session_id=request.session_id,
+                    memory_turns=memory_turns,
+                    memory_max_turns=resolved_conversation_store.max_turns,
+                    session_summary_available=session_summary_available,
+                    relevant_memory_count=len(relevant_memories),
+                    saved_memory=_memory_item(saved_memory) if saved_memory else None,
+                )
+                logger.info(
+                    "dialogue_stream_completed request_id=%s provider=%s model=%s first_text_ms=%s "
+                    "text_complete_ms=%s latency_ms=%s response_style=%s memory_turns=%s upstream_request_id=%s",
+                    request_id,
+                    resolved_provider.name,
+                    resolved_provider.model,
+                    resolved_first_text_ms,
+                    text_complete_ms,
+                    latency_ms,
+                    request.response_style,
+                    memory_turns,
+                    result.upstream_request_id or "none",
+                )
+                yield _ndjson({"type": "complete", "response": response.model_dump(mode="json")})
+            except _DialogueCancelled:
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                logger.info(
+                    "dialogue_stream_cancelled request_id=%s provider=%s latency_ms=%s",
+                    request_id,
+                    resolved_provider.name,
+                    latency_ms,
+                )
+                yield _stream_error(
+                    "dialogue_cancelled",
+                    "応答生成を停止しました。",
+                    request_id,
+                )
+            except ProviderError as error:
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                logger.warning(
+                    "dialogue_stream_failed request_id=%s provider=%s code=%s latency_ms=%s",
+                    request_id,
+                    resolved_provider.name,
+                    error.code,
+                    latency_ms,
+                )
+                yield _stream_error(error.code, error.public_message, request_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                logger.exception(
+                    "dialogue_stream_failed request_id=%s provider=%s code=unexpected latency_ms=%s",
+                    request_id,
+                    resolved_provider.name,
+                    latency_ms,
+                )
+                yield _stream_error(
+                    "unexpected_error",
+                    "予期しないエラーが発生しました。",
+                    request_id,
+                )
+            finally:
+                if provider_task is not None and not provider_task.done():
+                    provider_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await provider_task
+                async with active_dialogue_lock:
+                    if active_dialogues.get(request.session_id) is active_dialogue:
+                        active_dialogues.pop(request.session_id, None)
+
+        return StreamingResponse(
+            stream_body(),
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+                "X-Content-Type-Options": "nosniff",
+                "X-Request-Id": request_id,
+            },
+        )
 
     @app.delete(
         "/api/dialogue/sessions/{session_id}/active",
@@ -519,6 +752,23 @@ def _memory_item(memory: PersistentMemory) -> PersistentMemoryItem:
         created_at=memory.created_at,
         updated_at=memory.updated_at,
         use_count=memory.use_count,
+    )
+
+
+def _ndjson(payload: dict[str, object]) -> bytes:
+    return f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n".encode()
+
+
+def _stream_error(code: str, message: str, request_id: str) -> bytes:
+    return _ndjson(
+        {
+            "type": "error",
+            "error": {
+                "code": code,
+                "message": message,
+                "request_id": request_id,
+            },
+        }
     )
 
 

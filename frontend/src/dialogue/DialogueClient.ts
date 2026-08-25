@@ -4,6 +4,7 @@ import type {
   DialogueHealth,
   DialogueProviderName,
   DialogueResponse,
+  DialogueStreamEvent,
   PersistentMemoryClearResponse,
   PersistentMemoryDeleteResponse,
   PersistentMemoryItem,
@@ -63,6 +64,84 @@ export class DialogueClient {
       throw new DialogueApiError("Backendから不正な応答が返りました。");
     }
     return payload;
+  }
+
+  public async streamMessage(
+    message: string,
+    sessionId: string,
+    responseStyle: ResponseStyle,
+    onTextDelta: (delta: string) => void,
+    signal?: AbortSignal,
+  ): Promise<DialogueResponse> {
+    const controller = new AbortController();
+    const abortFromParent = (): void => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", abortFromParent, { once: true });
+    const timeout = globalThis.setTimeout(() => controller.abort(new Error("timeout")), this.timeoutMs);
+
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}/dialogue/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+        body: JSON.stringify({ message, session_id: sessionId, response_style: responseStyle }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null);
+        throw createApiError(response.status, payload);
+      }
+      if (!response.body) {
+        throw new DialogueApiError("BackendがStreaming応答を開始できませんでした。", 502, "stream_unavailable");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let started = false;
+      let completed: DialogueResponse | null = null;
+      const acceptEvent = (event: DialogueStreamEvent | null): void => {
+        if (!event) return;
+        if (event.type === "start") {
+          if (started || completed) throw invalidStreamError();
+          started = true;
+          return;
+        }
+        if (!started || completed) throw invalidStreamError();
+        if (event.type === "text_delta") onTextDelta(event.delta);
+        if (event.type === "complete") completed = event.response;
+      };
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+        if (buffer.length > 64_000) {
+          throw new DialogueApiError("BackendのStreaming応答が上限を超えました。", 502, "stream_too_large");
+        }
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          acceptEvent(parseDialogueStreamEvent(line));
+        }
+        if (chunk.done) break;
+      }
+      acceptEvent(parseDialogueStreamEvent(buffer));
+      if (!completed) {
+        throw new DialogueApiError(
+          "BackendのStreaming応答が完了する前に終了しました。",
+          502,
+          "incomplete_stream",
+        );
+      }
+      return completed;
+    } catch (error: unknown) {
+      if (error instanceof DialogueApiError) throw error;
+      if (controller.signal.aborted && !signal?.aborted) {
+        throw new DialogueApiError("Backendの応答が時間内に返りませんでした。", 504, "client_timeout");
+      }
+      if (signal?.aborted) throw error;
+      throw new DialogueApiError("Backendへ接続できませんでした。起動状態を確認してください。");
+    } finally {
+      globalThis.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abortFromParent);
+    }
   }
 
   public async resetSession(sessionId: string, signal?: AbortSignal): Promise<SessionResetResponse> {
@@ -234,6 +313,8 @@ function isDialogueResponse(value: unknown): value is DialogueResponse {
     typeof value["model"] === "string" &&
     typeof value["request_id"] === "string" &&
     typeof value["latency_ms"] === "number" &&
+    typeof value["first_text_ms"] === "number" &&
+    typeof value["text_complete_ms"] === "number" &&
     typeof value["session_id"] === "string" &&
     typeof value["memory_turns"] === "number" &&
     typeof value["memory_max_turns"] === "number" &&
@@ -241,6 +322,52 @@ function isDialogueResponse(value: unknown): value is DialogueResponse {
     typeof value["relevant_memory_count"] === "number" &&
     (value["saved_memory"] === null || isPersistentMemoryItem(value["saved_memory"]))
   );
+}
+
+function parseDialogueStreamEvent(line: string): DialogueStreamEvent | null {
+  const normalized = line.trim();
+  if (!normalized) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(normalized);
+  } catch {
+    throw new DialogueApiError("Backendから不正なStreaming応答が返りました。", 502, "invalid_stream");
+  }
+  if (!isRecord(value) || typeof value["type"] !== "string") {
+    throw new DialogueApiError("Backendから不正なStreaming応答が返りました。", 502, "invalid_stream");
+  }
+  if (value["type"] === "error" && isRecord(value["error"])) {
+    const error = value["error"];
+    throw new DialogueApiError(
+      typeof error["message"] === "string" ? error["message"] : "Backendでエラーが発生しました。",
+      null,
+      typeof error["code"] === "string" ? error["code"] : "stream_failed",
+      typeof error["request_id"] === "string" ? error["request_id"] : null,
+    );
+  }
+  if (
+    value["type"] === "start" &&
+    typeof value["request_id"] === "string" &&
+    isProviderName(value["provider"]) &&
+    typeof value["model"] === "string"
+  ) {
+    return value as unknown as DialogueStreamEvent;
+  }
+  if (
+    value["type"] === "text_delta" &&
+    typeof value["delta"] === "string" &&
+    typeof value["elapsed_ms"] === "number"
+  ) {
+    return value as unknown as DialogueStreamEvent;
+  }
+  if (value["type"] === "complete" && isDialogueResponse(value["response"])) {
+    return value as unknown as DialogueStreamEvent;
+  }
+  throw new DialogueApiError("Backendから不正なStreaming応答が返りました。", 502, "invalid_stream");
+}
+
+function invalidStreamError(): DialogueApiError {
+  return new DialogueApiError("Backendから不正なStreaming応答順序が返りました。", 502, "invalid_stream");
 }
 
 function isDialogueCancellationResponse(value: unknown): value is DialogueCancellationResponse {

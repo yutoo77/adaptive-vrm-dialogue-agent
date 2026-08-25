@@ -30,6 +30,8 @@ class DialogueResponse(BaseModel):
     model: str
     request_id: str
     latency_ms: int
+    first_text_ms: int
+    text_complete_ms: int
     session_id: str
     memory_turns: int
     memory_max_turns: int

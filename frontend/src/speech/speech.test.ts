@@ -180,6 +180,7 @@ describe("SpeechController", () => {
     const audio = new FakeAudio();
     const observed = createObservedCallbacks();
     const revoke = vi.fn();
+    const onStarted = vi.fn();
     const controller = new SpeechController(
       createGateway(),
       observed.callbacks,
@@ -188,18 +189,23 @@ describe("SpeechController", () => {
       { createObjectURL: () => "blob:test", revokeObjectURL: revoke },
     );
 
-    controller.speak("こんにちは", {
-      emotion: "happy",
-      intensity: 0.5,
-      gesture: "soft_bounce",
-      voice_style: "bright",
-      cues: [],
-    });
+    controller.speak(
+      "こんにちは",
+      {
+        emotion: "happy",
+        intensity: 0.5,
+        gesture: "soft_bounce",
+        voice_style: "bright",
+        cues: [],
+      },
+      onStarted,
+    );
     await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
     expect(observed.playback).toEqual([{ type: "started", durationMs: 3883, phraseBoundariesMs: [] }]);
     expect(audio.playbackRate).toBeCloseTo(1.03);
     expect(observed.latencies).toHaveLength(1);
     expect(observed.latencies[0]).toBeGreaterThanOrEqual(0);
+    expect(onStarted).toHaveBeenCalledOnce();
 
     audio.emit("ended");
     expect(observed.statuses.at(-1)).toMatchObject({ state: "ready", action: "replay" });
