@@ -69,6 +69,11 @@ const dialogue = new DialogueController(
     onPersistentMemoriesChange: (items) => ui.updatePersistentMemories(items),
     onPersistentMemoryBusyChange: (busy) => ui.updatePersistentMemoryBusy(busy),
     onMemoryNotice: (message) => ui.showNotice(message),
+    onCancelled: () => {
+      performanceTimeline?.clear();
+      ui.updatePerformance(null);
+      ui.showNotice("応答を停止しました。会話履歴と長期記憶には保存していません。");
+    },
     onConversationReset: () => {
       performanceTimeline?.clear();
       ui.resetDialogueConversation();
@@ -105,6 +110,7 @@ try {
     loadFile: (file: File) => viewer?.loadFile(file) ?? Promise.resolve(),
     loadDefault: () => viewer?.loadDefaultModel() ?? Promise.resolve(),
     sendMessage: (message: string) => dialogue.send(message),
+    cancelResponse: () => dialogue.cancelResponse(),
     setResponseStyle: (style) => dialogue.setResponseStyle(style),
     resetConversation: () => dialogue.resetConversation(),
     addPersistentMemory: (content: string) => dialogue.addPersistentMemory(content),

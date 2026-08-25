@@ -12,7 +12,7 @@
 
 ## 現在のRelease目標
 
-現在の目標は、Public Portfolioとして公開済みのLocal Applicationへ、利用者が返答量を明示制御できる`v0.3 Adaptive Interaction`を一つの評価可能なVertical Sliceとして追加すること。
+現在の目標は、Public Portfolioとして公開済みのLocal Applicationへ、`v0.4 Natural Conversation`の最初のSliceとして、利用者が生成中の応答を止められる経路を追加すること。停止したTurnを表示・Session履歴・明示長期記憶へ残さず、停止不成立も成功に見せないことまでを一つの契約とする。
 
 ### Public Portfolio Gate
 
@@ -28,7 +28,7 @@
 - [x] 変更差分をReviewし、明示承認後にStage/Commit/Pushする。
 - [x] GitHubの説明、Topics、Visibilityを最終確認する。
 
-このPublic Portfolio Gateはv0.2公開時に完了した。v0.3の変更は別Branchで検証し、Commit/Pushは改めて分離して扱う。
+このPublic Portfolio Gateはv0.2公開時に完了した。v0.3 Adaptive InteractionはPR #2でCI通過後に`main`へ統合済み。以後のSliceもFeature Branch、Local検証、CI、Reviewの順で統合する。
 
 Public化と、動作中BackendをInternetへ公開することは別である。現在のBackendは`127.0.0.1`専用で、公開Serviceに必要な認証、Rate Limit、TLS、利用者分離を持たない。
 
@@ -84,16 +84,25 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 能力・感情を自動推定せず、選択はFrontendのSession内だけで保持
 - API/Provider/Controller/Browser testと固定入力評価
 
+### Natural Conversation — Generation Cancel
+
+- 生成中だけ送信Buttonを`応答を停止`へ切り替える、Controlを増やさないUI
+- Session別Active Taskと、停止受付/保存開始を分ける排他境界
+- 停止TurnのAssistant本文、Session履歴、明示長期記憶を追加しない契約
+- 停止成功時の音声・口形・Gesture Resetと`idle`復帰
+- Backend、Controller、Client、Browserを通した決定的な停止評価
+
 ## 現在のEvidence
 
 | 対象 | 自動確認 | 実動作確認 | 残るGap |
 | --- | --- | --- | --- |
-| Frontend | Type/lint/build、Vitest 61件、Playwright 4件（Mock一往復・返答スタイル・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
-| Backend | Ruff、Pytest 52件、pip check | Mock/VOICEVOX Health | 実OpenAIは未確認 |
+| Frontend | Type/lint/build、Vitest 64件、Playwright 5件（Mock一往復・返答スタイル・生成停止・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
+| Backend | Ruff、Pytest 53件、pip check | Mock/VOICEVOX Health | 実OpenAIは未確認 |
 | Voice output | API/WAV/Stop/Timing Test | 実VOICEVOX 10/10 | Engine処理の途中Cancel |
 | Voice input | Permission/無音/Cancel/マイクTest | 実マイク短文1件 | Noiseを含む固定10文 |
 | Performance | Schema/Cue/Reduced Motion Test | 固定10文10/10、実VRM | 皮肉・未知言い換え |
 | Interaction | 4種のSchema/API/UI伝播、不明値拒否、OpenAI Instruction Test | Mock固定入力で4種の差を確認 | 実OpenAIの文章品質、利用者評価 |
+| Generation cancel | Active Task、停止/保存境界、非保存、UI復帰をAPI/Unit/Browserで確認 | Mock経路 | 実Provider/Network別の停止到達時間 |
 | Memory | Session/Persistence/Search Test | CRUD UI | 言い換え検索の定量評価 |
 | Security | Local pattern scan、Gitleaks CI、npm/pip audit 0件 | Loopback bind/ignored data、Public RepositoryのSecret scanning確認 | 新しい依存・Data追加時の継続監査 |
 
@@ -106,7 +115,8 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 最初の主要Sliceは、実Providerを任意で使った自然な複数Turn会話とする。実API Request、費用発生、外部送信は所有者の明示承認後だけ行う。
 
 - Character Profile、会話履歴、明示記憶、返答スタイルを一つのContext契約へ整理する。
-- Text Streamingまたは段階表示、生成Cancel、発話・Cue・口形の一括停止を設計する。
+- [x] 生成Cancel、発話・Cue・口形の一括停止を設計・実装する。
+- [ ] Text Streamingまたは段階表示を、読みやすさとTTS開始Latencyを含めて比較する。
 - 応答開始、本文完了、音声開始までのLatencyを分けて計測する。
 - 代表会話とFailure Caseで、文脈保持、冗長さ、不確実性、Character一貫性を評価する。
 - 既定MockとText fallbackを維持し、実Providerが使えなくても起動とDemoを継続できるようにする。
@@ -114,7 +124,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 完了条件:
 
 - 実Providerで複数Turnの代表Scenarioを再現し、結果と費用を記録する。
-- 利用者が生成をCancelでき、音声・口形・Gestureが残らない。
+- [x] 利用者が生成をCancelでき、停止したTurnを保存せず、音声・口形・Gestureが残らない。
 - 外部送信対象をUIとREADMEから確認できる。
 - Mock、Provider failure、VOICEVOX failureの各Fallbackが通る。
 
@@ -137,7 +147,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 1. 実マイク固定10文を静音/生活雑音で比較し、意味保持率、再試行、Latencyを記録する。
 2. 初回Setup、依存診断、Engine状態、復帰手順を一つの起動体験へまとめる。
-3. Three.js/VRMをDynamic importし、約852kBのproduction bundleを分割する。
+3. Three.js/VRMをDynamic importし、約854kBのproduction bundleを分割する。
 4. 主要画面を追加する場合だけ、残る`UIController` Event調整を領域別に分割する。
 5. Windows以外の起動導線が必要になった場合だけ、Cross-platform scriptまたはPackagingを選ぶ。
 

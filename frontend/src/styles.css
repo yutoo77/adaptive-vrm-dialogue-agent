@@ -265,6 +265,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .send-button, .voice-input-button { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; cursor: pointer; transition: background .16s ease, transform .16s ease, opacity .16s ease; }
 .send-button { border: 0; color: #fff; background: var(--accent); font-size: 18px; line-height: 1; }
 .send-button:hover:not(:disabled) { transform: translateY(-1px); background: #385d62; }
+.send-button[data-mode="cancel"] { background: #98616b; font-size: 12px; }
+.send-button[data-mode="cancel"]:hover:not(:disabled) { background: #7e4c56; }
 .voice-input-button { position: relative; border: 1px solid #d5d2cc; color: #657b7d; background: #f8f7f4; }
 .voice-input-button:hover:not(:disabled) { transform: translateY(-1px); background: #f0f3f1; }
 .send-button:disabled, .voice-input-button:disabled { cursor: not-allowed; opacity: .35; }

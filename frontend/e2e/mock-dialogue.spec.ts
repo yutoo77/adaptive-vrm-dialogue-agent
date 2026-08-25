@@ -71,6 +71,42 @@ test("explicit response style reaches the free Mock provider", async ({ page }) 
   await expect(style).toBeEnabled();
 });
 
+test("user can cancel an active response and return to idle", async ({ page }) => {
+  let releaseDialogue: (() => void) | null = null;
+  await page.route("**/api/dialogue/sessions/*/active", async (route) => {
+    const segments = new URL(route.request().url()).pathname.split("/");
+    const sessionId = segments.at(-2) ?? "session-cancel-e2e";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ session_id: sessionId, cancelled: true }),
+    });
+  });
+  await page.route("**/api/dialogue", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      releaseDialogue = resolve;
+    });
+    await route.abort("aborted").catch(() => undefined);
+  });
+  await page.goto("/");
+
+  await page.getByRole("textbox", { name: "メッセージ" }).fill("途中で止める");
+  await page.getByRole("button", { name: "送信" }).click();
+  const stop = page.getByRole("button", { name: "応答を停止" });
+  await expect(stop).toBeEnabled();
+  await stop.click();
+  releaseDialogue?.();
+
+  await expect(page.getByRole("button", { name: "送信" })).toBeEnabled();
+  await expect(page.locator("#app")).toHaveAttribute("data-state", "idle");
+  await expect(page.locator("#dialogue-log .is-assistant")).toHaveCount(0);
+  await expect(page.locator("#toast")).toContainText("応答を停止しました");
+});
+
 test("mobile keeps the conversation composer in the first viewport", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 844 },

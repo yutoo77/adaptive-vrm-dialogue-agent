@@ -67,6 +67,11 @@ export interface SessionResetResponse {
   readonly cleared_turns: number;
 }
 
+export interface DialogueCancellationResponse {
+  readonly session_id: string;
+  readonly cancelled: boolean;
+}
+
 export function isResponseStyle(value: unknown): value is ResponseStyle {
   return RESPONSE_STYLES.some((style) => style === value);
 }

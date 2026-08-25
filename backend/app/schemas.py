@@ -43,6 +43,11 @@ class SessionResetResponse(BaseModel):
     cleared_turns: int
 
 
+class DialogueCancellationResponse(BaseModel):
+    session_id: str
+    cancelled: bool
+
+
 class HealthResponse(BaseModel):
     status: Literal["ready", "configuration_error"]
     provider: Literal["mock", "openai"]
