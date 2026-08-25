@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import FastAPI, File, HTTPException, Path, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.character_profile import DEFAULT_CHARACTER_PROFILE, CharacterProfile
 from app.config import Settings
 from app.conversation import ConversationMemoryStore
 from app.persistent_memory import (
@@ -87,10 +88,11 @@ def create_app(
     transcription_provider: TranscriptionProvider | None = None,
     conversation_store: ConversationMemoryStore | None = None,
     persistent_memory_store: PersistentMemoryStore | None = None,
+    character_profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
 ) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
-    resolved_provider = provider or build_provider(resolved_settings)
-    resolved_speech_provider = speech_provider or build_speech_provider(resolved_settings)
+    resolved_provider = provider or build_provider(resolved_settings, character_profile)
+    resolved_speech_provider = speech_provider or build_speech_provider(resolved_settings, character_profile)
     resolved_transcription_provider = transcription_provider or build_transcription_provider(resolved_settings)
     resolved_conversation_store = conversation_store or ConversationMemoryStore()
     resolved_persistent_memory_store = persistent_memory_store or PersistentMemoryStore()
@@ -100,7 +102,7 @@ def create_app(
 
     app = FastAPI(
         title="Adaptive VRM Dialogue API",
-        version="0.4.0",
+        version="0.5.0",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
@@ -119,6 +121,7 @@ def create_app(
             session_summary_enabled=True,
             persistent_memory_enabled=True,
             persistent_memory_count=resolved_persistent_memory_store.count(),
+            character=character_profile,
         )
 
     @app.post("/api/dialogue", response_model=DialogueResponse)

@@ -47,6 +47,7 @@ Avatarが学習効果を必ず高める、Voiceが常に使いやすい、とは
 | Voice input | Push-to-Talk、マイク選択、自動停止、Draft確認 | 自動Testと実マイク1件。Noise評価は未完了 |
 | Memory | Session 10往復、決定的要約、明示SQLite、CRUD、Local検索 | Session分離/Persistence Test |
 | Adaptive Performance | 制限付き感情・Gesture・強度・Cue・Voice Style | 固定10文、Failure Case、実VRM比較 |
+| Character Identity | `月白 しずく v1.0.0`の口調・価値観・禁止表現・Theme・Voice・演技上限を本文/音声/演技/UIへ接続 | 実OpenAI 4/4・26/26、実VOICEVOX 10/10。独自VRM・聴取評価は未完了 |
 | Portfolio quality | README、Screenshot、License、CI、Security/Notice、Demo Guide | Public RepositoryとCIで確認 |
 
 Toolを実行するBounded Agent、RAG、Visionは未実装であり、現在の成果として主張しない。
@@ -132,6 +133,7 @@ Text表示より取消しにくい音声は、Token単位ではVOICEVOXへ渡さ
 - 既定Demo: Mock。無料、外部AI送信なし。
 - Voice: VOICEVOX/faster-whisper。無料だがLocal Resourceと各License条件が必要。
 - OpenAI: 任意。明示設定したRequestだけ料金と外部送信が発生する。2026-08-25の固定4 Turnは完了Request分で$0.001601、Text Streaming 1件は$0.0003424、Speech Pipeline 1件は$0.0003892。停止RequestはToken使用量を取得できず、費用不明として除外した。`store=False`はZero Data Retentionを意味しない。
+- Character Identity評価: 実OpenAI固定4件で$0.00120408。固定Profile、架空Scenarioだけを送信し、4/4 Scenario・26/26 Checkを通過したが、一般化性能とは扱わない。
 - Cloud/公開Server: 現在は不採用。認証、Data retention、費用上限を設計してから検討する。
 
 ## Portfolioで説明する中心

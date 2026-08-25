@@ -11,7 +11,13 @@ import {
   type ReducedMotionMode,
 } from "../types/character";
 import type { PerformanceTimelinePhase } from "../vrm/PerformanceTimelineController";
-import type { DialogueHealth, DialogueRole, PersistentMemoryItem, ResponseStyle } from "../dialogue/types";
+import type {
+  CharacterProfile,
+  DialogueHealth,
+  DialogueRole,
+  PersistentMemoryItem,
+  ResponseStyle,
+} from "../dialogue/types";
 import type { SpeechStatus } from "../speech/types";
 import type { MicrophoneOption, VoiceInputStatus } from "../transcription/types";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
@@ -59,6 +65,9 @@ export class UIController {
   private dialogueBusy = false;
   private dialogueProvider = "未接続";
   private dialogueModel = "—";
+  private characterProfileId = "—";
+  private characterProfileVersion = "—";
+  private characterShortName = "キャラクター";
   private dialogueMemoryTurns = 0;
   private dialogueMemoryMaxTurns = 10;
   private dialogueSummaryAvailable = false;
@@ -256,7 +265,10 @@ export class UIController {
     this.dialogueReady = health?.status === "ready";
     this.dialogueProvider = health?.provider ?? "未接続";
     this.dialogueModel = health?.model ?? "—";
-    if (health) this.updatePersistentMemoryCount(health.persistent_memory_count);
+    if (health) {
+      this.updatePersistentMemoryCount(health.persistent_memory_count);
+      this.updateCharacterProfile(health.character);
+    }
 
     if (!health) {
       badge.textContent = "オフライン";
@@ -296,7 +308,7 @@ export class UIController {
     const message = document.createElement("article");
     message.className = `dialogue-message is-${role}`;
     const label = document.createElement("span");
-    label.textContent = role === "user" ? "あなた" : "キャラクター";
+    label.textContent = role === "user" ? "あなた" : this.characterShortName;
     const body = document.createElement("p");
     body.textContent = text;
     message.append(label, body);
@@ -317,7 +329,7 @@ export class UIController {
       message.dataset["streamingAssistant"] = "true";
       message.setAttribute("aria-hidden", "true");
       const label = document.createElement("span");
-      label.textContent = "キャラクター";
+      label.textContent = this.characterShortName;
       const body = document.createElement("p");
       message.append(label, body);
       log.append(message);
@@ -814,6 +826,32 @@ export class UIController {
     });
   }
 
+  private updateCharacterProfile(profile: CharacterProfile): void {
+    this.characterProfileId = profile.id;
+    this.characterProfileVersion = profile.version;
+    this.characterShortName = profile.short_name;
+
+    const name = this.required("#character-name");
+    const version = this.required("#character-version");
+    const tagline = this.required("#character-tagline");
+    name.textContent = profile.display_name;
+    name.title = `${profile.display_name} — ${profile.tagline}`;
+    version.textContent = `v${profile.version}`;
+    version.hidden = false;
+    tagline.textContent = profile.tagline;
+    tagline.hidden = false;
+    this.required("#character-monogram").textContent = profile.short_name.at(0) ?? "月";
+    this.required("#conversation-title").textContent = `${profile.short_name}と話す`;
+    this.root.querySelectorAll<HTMLElement>(".dialogue-message.is-assistant > span").forEach((label) => {
+      label.textContent = profile.short_name;
+    });
+
+    const [primary, light, accent] = profile.theme_colors;
+    this.root.style.setProperty("--character-primary", primary);
+    this.root.style.setProperty("--character-light", light);
+    this.root.style.setProperty("--character-accent", accent);
+  }
+
   private updateDeveloperPanel(): void {
     renderDeveloperPanel(this.required("#developer-content"), {
       diagnostics: this.modelDiagnostics,
@@ -821,6 +859,7 @@ export class UIController {
       expression: this.currentExpression,
       dialogueProvider: this.dialogueProvider,
       dialogueModel: this.dialogueModel,
+      characterProfile: `${this.characterProfileId} v${this.characterProfileVersion}`,
       dialogueMemoryTurns: this.dialogueMemoryTurns,
       dialogueMemoryMaxTurns: this.dialogueMemoryMaxTurns,
       dialogueSummaryAvailable: this.dialogueSummaryAvailable,

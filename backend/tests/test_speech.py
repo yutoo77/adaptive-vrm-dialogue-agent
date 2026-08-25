@@ -1,4 +1,5 @@
 import io
+import json
 import wave
 
 import httpx
@@ -85,6 +86,10 @@ def test_voicevox_provider_uses_audio_query_then_synthesis() -> None:
     assert requests[2].url.params["text"] == "こんにちは"
     assert requests[2].url.params["speaker"] == "7"
     assert requests[3].url.params["speaker"] == "7"
+    synthesis_query = json.loads(requests[3].content)
+    assert synthesis_query["speedScale"] == 0.96
+    assert synthesis_query["pitchScale"] == -0.01
+    assert synthesis_query["intonationScale"] == 0.94
 
 
 def test_voicevox_connection_failure_is_reported_without_response_details() -> None:

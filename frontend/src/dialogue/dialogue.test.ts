@@ -21,6 +21,31 @@ const READY_HEALTH: DialogueHealth = {
   session_summary_enabled: true,
   persistent_memory_enabled: true,
   persistent_memory_count: 0,
+  character: {
+    id: "tsukishiro_shizuku",
+    version: "1.0.0",
+    display_name: "月白 しずく",
+    short_name: "しずく",
+    tagline: "静かに寄り添い、考えをほどく案内役",
+    self_reference: "わたし",
+    user_reference: "あなた",
+    speech_principles: ["穏やかに話す"],
+    values: ["利用者の選択を尊重する"],
+    avoided_expressions: ["過度な持ち上げ"],
+    theme_colors: ["#202a5a", "#f7f8ff", "#8f82c7"],
+    voice: {
+      provider: "voicevox",
+      speaker_id: 14,
+      speed_scale: 0.96,
+      pitch_scale: -0.01,
+      intonation_scale: 0.94,
+    },
+    performance: {
+      maximum_intensity: 0.72,
+      cue_intensity_scale: 0.82,
+      default_voice_style: "warm",
+    },
+  },
 };
 
 const MEMORY_ITEM: PersistentMemoryItem = {
@@ -150,6 +175,24 @@ function createCallbacks() {
     },
   };
 }
+
+it("validates the versioned character profile in backend health", async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(READY_HEALTH), { status: 200 }));
+  const client = new DialogueClient(fetchMock, "/api", 1000);
+
+  await expect(client.getHealth()).resolves.toEqual(READY_HEALTH);
+});
+
+it("rejects an invalid character profile before it reaches the UI", async () => {
+  const invalidHealth = {
+    ...READY_HEALTH,
+    character: { ...READY_HEALTH.character, theme_colors: ["not-a-color", "#ffffff", "#000000"] },
+  };
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(invalidHealth), { status: 200 }));
+  const client = new DialogueClient(fetchMock, "/api", 1000);
+
+  await expect(client.getHealth()).rejects.toBeInstanceOf(DialogueApiError);
+});
 
 it("validates and sends the latest text message to the backend", async () => {
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

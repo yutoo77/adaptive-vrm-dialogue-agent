@@ -17,13 +17,18 @@ from openai import (
     RateLimitError,
 )
 
+from app.character_profile import (
+    DEFAULT_CHARACTER_PROFILE,
+    CharacterProfile,
+    align_performance_with_character,
+)
 from app.config import ProviderName, Settings
 from app.conversation import DialogueContext
 from app.interaction import ResponseStyle, apply_mock_response_style, response_style_instruction
 from app.performance import PerformancePlan, StructuredDialogueOutput, select_mock_performance
 from app.persistent_memory import extract_explicit_memory
 
-SYSTEM_INSTRUCTIONS = """あなたはVRMアバターとして日本語で対話するアシスタントです。
+BASE_SYSTEM_INSTRUCTIONS = """あなたはVRMアバターとして日本語で対話するアシスタントです。
 利用者が明示選択した応答スタイルに従ってください。
 不確かな内容は断定せず、必要なら確認を促してください。
 自分を人間だと偽らず、まだ使えないツールや記憶があるように振る舞わないでください。
@@ -96,6 +101,9 @@ class MockProvider:
     ready = True
     configuration_message = None
 
+    def __init__(self, profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE) -> None:
+        self._profile = profile
+
     async def generate_reply(
         self,
         message: str,
@@ -124,9 +132,12 @@ class MockProvider:
             else:
                 reply = "この会話では、まだ前の話題はないよ。ここから新しく話してみよう。"
         elif any(word in normalized for word in ("こんにちは", "こんばんは", "おはよう")):
-            reply = "こんにちは。今日はどんなことを話そうか？"
+            reply = f"こんにちは。{self._profile.short_name}だよ。今日はどんなことを話そうか？"
         elif "名前" in normalized:
-            reply = "いまはAdaptive Character Labの案内役だよ。呼び名や性格は、対話基盤が安定してから整えていけるよ。"
+            reply = (
+                f"わたしは{self._profile.display_name}。"
+                f"{self._profile.tagline}として作られた、Adaptive Character LabのAIキャラクターだよ。"
+            )
         elif any(word in normalized for word in ("何ができ", "なにができ", "できること")):
             reply = (
                 "今はText入力を受け取り、返答に合わせて考える・説明する状態へ切り替えられるよ。"
@@ -141,7 +152,10 @@ class MockProvider:
         styled_reply = apply_mock_response_style(reply, response_style)
         return ProviderReply(
             text=styled_reply,
-            performance=select_mock_performance(message, styled_reply),
+            performance=align_performance_with_character(
+                select_mock_performance(message, styled_reply),
+                self._profile,
+            ),
         )
 
     async def stream_reply(
@@ -192,11 +206,16 @@ class OpenAIProvider:
     ready = True
     configuration_message = None
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
+    ) -> None:
         if not settings.openai_api_key:
             raise ValueError("OpenAIProvider requires an API key.")
         self.model = settings.openai_model
         self._max_output_tokens = settings.max_output_tokens
+        self._profile = profile
         self._client = AsyncOpenAI(
             api_key=settings.openai_api_key,
             max_retries=1,
@@ -214,7 +233,7 @@ class OpenAIProvider:
         try:
             response = await self._client.responses.parse(
                 model=self.model,
-                instructions=f"{SYSTEM_INSTRUCTIONS}\n\n{response_style_instruction(response_style)}",
+                instructions=self._instructions(response_style),
                 input=input_items,
                 text_format=StructuredDialogueOutput,
                 max_output_tokens=self._max_output_tokens,
@@ -226,7 +245,7 @@ class OpenAIProvider:
         except (AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError) as error:
             raise _translate_openai_error(error) from error
 
-        return _provider_reply_from_response(response)
+        return _provider_reply_from_response(response, self._profile)
 
     async def stream_reply(
         self,
@@ -240,7 +259,7 @@ class OpenAIProvider:
         try:
             async with self._client.responses.stream(
                 model=self.model,
-                instructions=f"{SYSTEM_INSTRUCTIONS}\n\n{response_style_instruction(response_style)}",
+                instructions=self._instructions(response_style),
                 input=self._input_items(message, context),
                 text_format=StructuredDialogueOutput,
                 max_output_tokens=self._max_output_tokens,
@@ -260,7 +279,7 @@ class OpenAIProvider:
         except (AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError) as error:
             raise _translate_openai_error(error) from error
 
-        reply = _provider_reply_from_response(response)
+        reply = _provider_reply_from_response(response, self._profile)
         if reply.text.startswith(visible_text):
             remaining = reply.text[len(visible_text) :]
             if remaining:
@@ -299,13 +318,23 @@ class OpenAIProvider:
         input_items.append({"role": "user", "content": message})
         return input_items
 
+    def _instructions(self, response_style: ResponseStyle) -> str:
+        return (
+            f"{BASE_SYSTEM_INSTRUCTIONS}\n\n"
+            f"<character_profile>\n{self._profile.system_instructions()}\n</character_profile>\n\n"
+            f"{response_style_instruction(response_style)}"
+        )
 
-def build_provider(settings: Settings) -> DialogueProvider:
+
+def build_provider(
+    settings: Settings,
+    profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
+) -> DialogueProvider:
     if settings.provider == "mock":
-        return MockProvider()
+        return MockProvider(profile)
     if not settings.openai_api_key:
         return UnavailableProvider(settings.openai_model)
-    return OpenAIProvider(settings)
+    return OpenAIProvider(settings, profile)
 
 
 async def stream_provider_reply(
@@ -326,13 +355,16 @@ async def stream_provider_reply(
     yield ProviderStreamCompleted(reply)
 
 
-def _provider_reply_from_response(response: object) -> ProviderReply:
+def _provider_reply_from_response(
+    response: object,
+    profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
+) -> ProviderReply:
     output = getattr(response, "output_parsed", None)
     if not isinstance(output, StructuredDialogueOutput) or not output.reply.strip():
         raise ProviderError(502, "empty_response", "AIから空の応答が返りました。もう一度試してください。")
     return ProviderReply(
         text=output.reply.strip(),
-        performance=output.performance,
+        performance=align_performance_with_character(output.performance, profile),
         upstream_request_id=getattr(response, "_request_id", None),
         usage=_read_provider_usage(getattr(response, "usage", None)),
     )

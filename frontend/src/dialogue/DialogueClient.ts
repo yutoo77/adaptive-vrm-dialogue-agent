@@ -1,5 +1,6 @@
 import { isResponseStyle } from "./types";
 import type {
+  CharacterProfile,
   DialogueCancellationResponse,
   DialogueHealth,
   DialogueProviderName,
@@ -299,8 +300,56 @@ function isDialogueHealth(value: unknown): value is DialogueHealth {
     typeof value["session_memory_max_turns"] === "number" &&
     typeof value["session_summary_enabled"] === "boolean" &&
     typeof value["persistent_memory_enabled"] === "boolean" &&
-    typeof value["persistent_memory_count"] === "number"
+    typeof value["persistent_memory_count"] === "number" &&
+    isCharacterProfile(value["character"])
   );
+}
+
+function isCharacterProfile(value: unknown): value is CharacterProfile {
+  if (!isRecord(value) || !isRecord(value["voice"]) || !isRecord(value["performance"])) return false;
+  const voice = value["voice"];
+  const performance = value["performance"];
+  const colors = value["theme_colors"];
+  return (
+    typeof value["id"] === "string" && /^[a-z0-9_]{3,64}$/.test(value["id"]) &&
+    typeof value["version"] === "string" && /^\d+\.\d+\.\d+$/.test(value["version"]) &&
+    isNonemptyString(value["display_name"]) &&
+    isNonemptyString(value["short_name"]) &&
+    isNonemptyString(value["tagline"]) &&
+    isNonemptyString(value["self_reference"]) &&
+    isNonemptyString(value["user_reference"]) &&
+    isStringArray(value["speech_principles"]) &&
+    isStringArray(value["values"]) &&
+    isStringArray(value["avoided_expressions"]) &&
+    Array.isArray(colors) &&
+    colors.length === 3 &&
+    colors.every((color) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color)) &&
+    voice["provider"] === "voicevox" &&
+    isNumberInRange(voice["speaker_id"], 0, 100_000) &&
+    Number.isInteger(voice["speaker_id"]) &&
+    isNumberInRange(voice["speed_scale"], 0.5, 2) &&
+    isNumberInRange(voice["pitch_scale"], -0.15, 0.15) &&
+    isNumberInRange(voice["intonation_scale"], 0, 2) &&
+    isNumberInRange(performance["maximum_intensity"], 0.2, 1) &&
+    isNumberInRange(performance["cue_intensity_scale"], 0, 1) &&
+    isVoiceStyle(performance["default_voice_style"])
+  );
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isNonemptyString);
+}
+
+function isNonemptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isNumberInRange(value: unknown, minimum: number, maximum: number): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function isVoiceStyle(value: unknown): value is CharacterProfile["performance"]["default_voice_style"] {
+  return ["neutral", "warm", "bright", "gentle", "serious"].some((style) => style === value);
 }
 
 function isDialogueResponse(value: unknown): value is DialogueResponse {

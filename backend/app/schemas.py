@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.character_profile import CharacterProfile
 from app.interaction import ResponseStyle
 from app.performance import PerformancePlan
 
@@ -61,6 +62,7 @@ class HealthResponse(BaseModel):
     session_summary_enabled: bool
     persistent_memory_enabled: bool
     persistent_memory_count: int
+    character: CharacterProfile
 
 
 class PersistentMemoryItem(BaseModel):

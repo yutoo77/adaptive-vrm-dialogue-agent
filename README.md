@@ -10,7 +10,7 @@ Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声
 
 このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
 
-現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queueまでを実装しています。実OpenAI Providerは架空Dataによる固定4 Turn、Text Streaming、実VOICEVOXを組み合わせた発話準備まで評価済みです。多様な会話での自然さ、独自Avatar、利用者評価は今後の対象であり、完成済みとは主張しません。
+現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queueに加え、Version付きCharacter Profile `月白 しずく v1.0.0`を実装しています。Profileは表示名だけでなく、本文の口調・価値観・避ける表現、VOICEVOXの話速/抑揚、演技上限、UI Themeへ接続しています。多様な会話での自然さ、独自VRM、利用者による聴取評価は今後の対象であり、完成済みとは主張しません。
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
@@ -48,6 +48,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 | 領域 | 実装内容 |
 | --- | --- |
+| Character Identity | `月白 しずく v1.0.0`、口調・価値観・避ける表現・Theme・Voice・演技上限を一つのProfileで管理 |
 | 対話 | Text入力、Mock/OpenAI Provider切替、Structured Outputのreply-only Streaming、明示返答スタイル4種、生成中の応答停止、Token使用量、Timeout、Request ID |
 | Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認 |
 | Voice output | ローカルVOICEVOX、閉じた文の先行合成、順序付き再生Queue、停止、再再生、Text回答を残すFallback |
@@ -71,31 +72,35 @@ Textは`POST /api/dialogue/stream`のNDJSONで順次表示します。OpenAIのS
 
 閉じた文だけは`StreamingSpeechSegmenter`から`StreamingSpeechQueue`へ渡し、VOICEVOXの合成と再生を別Queueで順序付けます。次の文を現在の音声再生中に合成でき、停止時は合成Request・音声・Lip Sync・未再生文をまとめて破棄します。既に聞こえた音声は取り消せないため、未完の語句は読ませず、この制約も評価記録へ残しています。
 
-### 2. 自由命令を渡さない自動演技
+### 2. Version付きCharacter Profile
+
+`CharacterProfile`が名前、口調、価値観、避ける表現、Theme Color、VOICEVOX話者とprosody、演技上限を一つのVersion付きSchemaで管理します。OpenAIでは固定`instructions`、Mockでは決定的応答、VOICEVOXでは`audio_query`、UIでは名前・Version・Taglineへ反映します。会話履歴や長期記憶からProfileを上書きさせず、Profile変更と会話Dataを分離しています。
+
+### 3. 自由命令を渡さない自動演技
 
 Providerが返せる演技はPydantic/TypeScript Schemaで制限しています。任意のBone名、角度、Script、Animation URLは受け付けません。Frontendでも値を再検証し、Model差異や不正応答を安全にFallbackします。
 
-### 3. 実音声時間に合わせる演技とLip Sync
+### 4. 実音声時間に合わせる演技とLip Sync
 
 VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、実際のWAV長へScaleします。口形は5母音、途中Gestureは近い句境界へ同期します。Timingが欠ける場合は音量ベースの単一口形へ戻ります。
 
-### 4. 明示型MemoryとData境界
+### 5. 明示型MemoryとData境界
 
 通常会話はRAMだけに保持します。長期記憶は「覚えておいて：...」または管理UIから追加した項目だけをSQLiteへ保存し、内容の確認、編集、個別削除、全削除を提供します。Embeddingを使わないため無料・Localですが、言い換えに弱いことも制約として明示しています。
 
-### 5. Local-firstとProvider境界
+### 6. Local-firstとProvider境界
 
 既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。実Provider評価も、明示Gate、固定Request数、架空Data、Token使用量と費用記録を持つ専用Scriptへ分離しています。VOICEVOX接続先もLoopback HTTPだけを許可します。
 
-### 6. 利用者を推測しないAdaptive Interaction
+### 7. 利用者を推測しないAdaptive Interaction
 
 返答の長さと説明量を「短く・自然・詳しく・やさしく」から利用者が明示選択します。選択値はPydantic/TypeScriptの同じ4種類に制限し、Mockでは差を決定的に再現、OpenAIでは固定した指示へ変換します。声や文面から能力・感情を推測せず、選択はSession内だけに保持してReload時に既定の「自然」へ戻します。
 
-### 7. 会話を主役にする情報設計
+### 8. 会話を主役にする情報設計
 
 初期画面にはAvatar、会話履歴、入力だけを常時表示し、音声、記憶、演技調整、診断情報は必要なときに開く段階的開示へ整理しています。待機中の正常状態は繰り返し表示せず、処理中・失敗・利用者の判断が必要な状態だけを会話の近くへ出します。Nielsenの「システム状態の可視化」「利用者による制御」「不要情報を減らす」を判断基準として、Mobileでも入力欄が初期Viewport内に残ることをBrowser testで固定しています。
 
-### 8. Assetに依存しないVisual identity
+### 9. Assetに依存しないVisual identity
 
 Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材ではなくCSSのGradient、Border、Mask、Animationで描画しています。深藍・白練・藤色を基調にし、`CharacterState`を反映した`data-state`だけで、聞き取り時は青磁、思考時は藤色、発話時は水紋へ控えめな変化を加えます。環境演出は`prefers-reduced-motion`で停止し、Avatar制御や対話処理とは分離しています。
 
@@ -105,12 +110,14 @@ Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材�
 flowchart LR
     User["User\nText / Push-to-Talk"] --> UI["Vanilla TypeScript UI"]
     UI --> Style["Response style\nexplicit 4 options"]
+    Profile["Character Profile v1\ntext / voice / performance / theme"] --> UI
     Style --> Dialogue["DialogueController"]
     Dialogue -->|"NDJSON stream"| API["FastAPI"]
     Dialogue -. "DELETE active response" .-> API
     API <--> Session["Session Memory\nRAM + summary"]
     API <--> SQLite["Explicit Memory\nSQLite"]
     API --> Provider{"Provider"}
+    Profile --> Provider
     Provider --> Mock["Mock\nlocal / free"]
     Provider --> OpenAI["OpenAI\nopt-in"]
     Provider --> Plan["Bounded\nPerformancePlan"]
@@ -121,6 +128,7 @@ flowchart LR
     Dialogue --> SentenceQueue["Closed-sentence\nSpeech Queue"]
     SentenceQueue --> SpeechAPI["FastAPI\n/api/speech"]
     SpeechAPI --> Voicevox["VOICEVOX\nlocalhost"]
+    Profile --> SpeechAPI
     Voicevox --> Timing["WAV + vowel / phrase timing"]
     Timing --> Avatar["Three.js + VRM\nvoice / face / gesture"]
     Plan --> Avatar
@@ -217,7 +225,7 @@ $env:VOICEVOX_SPEAKER_ID = "14"
 .\start_demo.ps1
 ```
 
-既定は冥鳴ひまり（ノーマル / ID 14）です。公開した生成音声には`VOICEVOX:冥鳴ひまり`のクレジットが必要です。VOICEVOXが停止している場合もText対話は利用できます。
+Character Profileの既定は冥鳴ひまり（ノーマル / ID 14）、話速`0.96`、音高`-0.01`、抑揚`0.94`です。`VOICEVOX_SPEAKER_ID`で話者だけ上書きできますが、Profileとの印象は利用者自身で再確認してください。公開した生成音声には`VOICEVOX:冥鳴ひまり`のクレジットが必要です。VOICEVOXが停止している場合もText対話は利用できます。
 
 ### Push-to-Talk音声入力
 
@@ -248,6 +256,8 @@ KeyはBackendだけが読みます。`VITE_`で始まる環境変数、README、
 同日のStreaming固定評価では、1,196 input / 86 output tokens、42 Delta、初文3,321ms、本文完了4,117msで、796ms早く読み始められました。完了1件の既知費用は$0.0003424です。これは1回のSmokeであり一般的な速度向上ではありません。詳細は[実OpenAI Streaming評価](docs/evaluations/real-openai-streaming-2026-08-25.md)を参照してください。
 
 文単位音声の固定評価では、実OpenAI 1件と実VOICEVOXを組み合わせ、最初の閉じた文を3,602msで検出、WAV準備6,142ms、従来方式の比較値9,019msとなり、WAV準備を2,877ms前倒しできました。実際の可聴開始ではなく1回のWAV-ready比較です。1,196 input / 125 output tokens、既知費用$0.0003892で、詳細と取り消せない先行音声のRiskは[Streaming Speech評価](docs/evaluations/streaming-speech-2026-08-25.md)にあります。
+
+Character Identity固定評価では、互いに独立した4 Scenarioで名前とAI透明性、無理な励ましの回避、危険場面の慎重な演技、人格上書き耐性を確認し、**26/26 Check**が成功しました。6,192 input（Cached 3,024）/ 425 output tokens、既知費用は**$0.00120408**です。実VOICEVOXもProfile prosodyで10/10合成できました。詳細と限界は[Character Identity評価](docs/evaluations/character-identity-2026-08-25.md)にあります。
 
 `store=False`を指定していますが、これはZero Data Retentionと同義ではありません。OpenAIの[Data controls](https://developers.openai.com/api/docs/guides/your-data)では、明示Opt-inがないAPI DataはModel Trainingへ使わない一方、標準のAbuse Monitoring LogにPrompt/Responseが最大30日含まれ得ると説明されています。機微情報を送らないでください。
 
@@ -290,8 +300,8 @@ npm audit
 
 2026-08-25時点の確認結果:
 
-- Frontend: TypeScript、ESLint、Vitest **77件**、Playwright browser smoke **6件**、production build成功
-- Backend: Ruff、Pytest **64件**、`pip check`成功
+- Frontend: TypeScript、ESLint、Vitest **79件**、Playwright browser smoke **6件**、production build成功
+- Backend: Ruff、Pytest **69件**、`pip check`成功
 - Dependency audit: npm **0件**、pip-audit **0件**の既知脆弱性
 - Browser: Desktop、390px幅、319px幅、実VRM、Mock対話、VOICEVOX、5母音Lip Sync、自動演技を確認
 - Browser console: warning/error **0件**
@@ -300,6 +310,7 @@ npm audit
 - 実OpenAI固定4 Turn: 完了 **4/4**、固定品質Check **21/21**、完了応答Latency中央値 **3,496ms**、既知費用上限 **$0.001601**
 - 実OpenAI Streaming: **42 Delta**、初文 **3,321ms**、本文完了 **4,117ms**、先行表示 **796ms**、既知費用 **$0.0003424**
 - 実OpenAI + VOICEVOX: 最初の閉じた文 **3,602ms**、WAV準備 **6,142ms**、従来比較から **2,877ms**前倒し、既知費用 **$0.0003892**
+- Character Identity: 実OpenAI **4/4 Scenario・26/26 Check**、Profile prosodyの実VOICEVOX **10/10**、既知費用 **$0.00120408**
 
 固定Scenarioの成功は未知入力への一般化を保証しません。成功例だけでなく、否定表現・複合感情・Timing欠損・Stop/Failureを評価記録に残しています。
 
@@ -316,6 +327,7 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 - [Natural Conversation / 実OpenAI固定4 Turnと費用](docs/evaluations/real-openai-dialogue-2026-08-25.md)
 - [Natural Conversation / 実OpenAI Streamingと3段階Latency](docs/evaluations/real-openai-streaming-2026-08-25.md)
 - [Natural Conversation / 文単位VOICEVOX Queue](docs/evaluations/streaming-speech-2026-08-25.md)
+- [Character Identity / 本文・声・演技の固定4 Scenario](docs/evaluations/character-identity-2026-08-25.md)
 - [Speech input方式の選定](docs/speech-input-decision.md)
 
 ## Repository構成
@@ -331,7 +343,7 @@ adaptive-vrm-dialogue-agent/
 │     ├─ ui/             # DOMと利用者向け表示
 │     └─ vrm/            # Three.js、VRM、表情・姿勢・動き
 ├─ backend/
-│  ├─ app/               # FastAPI、Schema、Provider、Memory
+│  ├─ app/               # FastAPI、Character Profile、Schema、Provider、Memory
 │  ├─ scripts/           # Model準備と固定Scenario評価
 │  └─ tests/             # API、Provider、Speech、Memory Test
 ├─ docs/
@@ -353,6 +365,7 @@ adaptive-vrm-dialogue-agent/
 - SQLiteは暗号化していません。機微情報の保存には使えません。
 - 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
 - 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。実OpenAIは架空Dataの固定4 Turn、Text Streaming 1件、Speech Pipeline 1件だけで、多様な入力、再現分散、利用者が感じる自然さは未評価です。
+- Character Profileは現在`月白 しずく v1.0.0`のCode定義1種類です。複数Profile切替、UI編集、Turnをまたぐ感情の余韻、独自VRMとの統合、聴取評価は未完了です。
 - 自動演技のMock判定は日本語Keyword Ruleです。皮肉や未知の言い換えを正しく理解するとは限りません。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
 - production JavaScriptは約870kBで、Viteの500kB警告が出ます。

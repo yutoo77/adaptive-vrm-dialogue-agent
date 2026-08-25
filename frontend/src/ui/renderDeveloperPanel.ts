@@ -6,6 +6,7 @@ export interface DeveloperPanelModel {
   readonly expression: string;
   readonly dialogueProvider: string;
   readonly dialogueModel: string;
+  readonly characterProfile: string;
   readonly dialogueMemoryTurns: number;
   readonly dialogueMemoryMaxTurns: number;
   readonly dialogueSummaryAvailable: boolean;
@@ -29,6 +30,7 @@ export function renderDeveloperPanel(container: HTMLElement, model: DeveloperPan
     ["状態", model.state],
     ["Expression", model.expression],
     ["対話", `${model.dialogueProvider} / ${model.dialogueModel}`],
+    ["人格Profile", model.characterProfile],
     ["会話記憶", `${model.dialogueMemoryTurns} / ${model.dialogueMemoryMaxTurns} 往復（RAM）`],
     ["会話要約", model.dialogueSummaryAvailable ? "あり（RAM）" : "なし"],
     ["長期記憶", `${model.persistentMemoryCount} 件（端末内SQLite）`],

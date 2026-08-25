@@ -8,6 +8,7 @@ from typing import Literal, Protocol
 
 import httpx
 
+from app.character_profile import DEFAULT_CHARACTER_PROFILE, CharacterProfile
 from app.config import Settings
 
 SpeechProviderName = Literal["voicevox"]
@@ -70,11 +71,13 @@ class VoicevoxSpeechProvider:
         self,
         settings: Settings,
         transport: httpx.AsyncBaseTransport | None = None,
+        profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
     ) -> None:
         self.speaker_id = settings.voicevox_speaker_id
         self._base_url = settings.voicevox_base_url
         self._timeout = settings.voicevox_timeout_seconds
         self._transport = transport
+        self._voice_profile = profile.voice
 
     async def check_health(self) -> SpeechHealth:
         speaker_name: str | None = None
@@ -132,6 +135,9 @@ class VoicevoxSpeechProvider:
                 audio_query = query_response.json()
                 if not isinstance(audio_query, dict):
                     raise ValueError("VOICEVOX returned an invalid audio query.")
+                audio_query["speedScale"] = self._voice_profile.speed_scale
+                audio_query["pitchScale"] = self._voice_profile.pitch_scale
+                audio_query["intonationScale"] = self._voice_profile.intonation_scale
 
                 audio_response = await client.post(
                     "/synthesis",
@@ -181,8 +187,11 @@ class VoicevoxSpeechProvider:
         return SpeechSynthesisResult(audio=audio, timing=build_voicevox_timing(audio_query, audio))
 
 
-def build_speech_provider(settings: Settings) -> SpeechProvider:
-    return VoicevoxSpeechProvider(settings)
+def build_speech_provider(
+    settings: Settings,
+    profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
+) -> SpeechProvider:
+    return VoicevoxSpeechProvider(settings, profile=profile)
 
 
 def _find_speaker_details(payload: object, speaker_id: int) -> tuple[str | None, str | None]:
