@@ -32,6 +32,8 @@ Mention that arbitrary bone names and scripts are not accepted. The plan is limi
 
 Change `返し方` from `自然` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or emotion from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
 
+If a response remains in `thinking`, the send button changes to `応答を停止`. Stopping returns the Avatar to `idle` without adding an assistant message or saving that turn to session or long-term memory. The default Mock is intentionally fast, so use the automated browser scenario and the cancellation evaluation record as repeatable evidence instead of adding an artificial production delay only for the live demo.
+
 ### 3. Voice input and fallback — 40 seconds
 
 Press the microphone button, say a short phrase, and let silence stop the recording. Show that the recognized text returns to the input box instead of being sent automatically. This gives the user a chance to correct a recognition error.
@@ -46,7 +48,7 @@ Do not store sensitive or real personal information in a public demo.
 
 ### 5. Evidence and limits — 20 seconds
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no streaming response, no semantic vector search, no evaluated real-OpenAI style quality, and no guarantee of transcription quality in noisy environments.
+Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no streaming response, no semantic vector search, no evaluated real-OpenAI conversation/cancellation quality, and no guarantee of transcription quality in noisy environments.
 
 ## One-minute route
 
@@ -65,5 +67,6 @@ Close with the test and evaluation evidence, then state the limitations: no Inte
 | Backend is offline | Keep the VRM viewer open, restart `start_demo.ps1`, then retry. |
 | Port 8000 or 5173 belongs to another app | Stop that app or identify its PID; the launcher will not kill an unknown process. |
 | Browser blocks autoplay | Use the replay button for the generated audio. |
+| A response takes too long | Press the same button, now labelled `応答を停止`; wait for the idle notice before sending again. |
 
 Evaluation details and failure cases are stored under [docs/evaluations](evaluations/).

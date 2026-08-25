@@ -24,6 +24,7 @@ export interface UIActions {
   readonly loadFile: (file: File) => Promise<void>;
   readonly loadDefault: () => Promise<void>;
   readonly sendMessage: (message: string) => boolean;
+  readonly cancelResponse: () => boolean;
   readonly setResponseStyle: (style: ResponseStyle) => boolean;
   readonly resetConversation: () => boolean;
   readonly addPersistentMemory: (content: string) => boolean;
@@ -366,8 +367,10 @@ export class UIController {
     const log = this.required("#dialogue-log");
     const submit = this.required<HTMLButtonElement>("#dialogue-submit");
     log.setAttribute("aria-busy", String(busy));
-    submit.textContent = busy ? "…" : "↑";
-    submit.setAttribute("aria-label", busy ? "応答待ち" : "送信");
+    submit.textContent = busy ? "■" : "↑";
+    submit.dataset["mode"] = busy ? "cancel" : "send";
+    submit.setAttribute("aria-label", busy ? "応答を停止" : "送信");
+    submit.title = busy ? "応答を停止" : "送信";
     this.syncDialogueControls();
     this.syncSpeechControl();
   }
@@ -617,6 +620,10 @@ export class UIController {
       "submit",
       (event) => {
         event.preventDefault();
+        if (this.dialogueBusy) {
+          this.actions?.cancelResponse();
+          return;
+        }
         const message = input.value;
         if (this.actions?.sendMessage(message)) input.value = "";
       },
@@ -864,7 +871,8 @@ export class UIController {
     const voiceBusy = this.isVoiceInputBusy();
     const disabled = !this.dialogueReady || this.dialogueBusy || voiceBusy;
     this.required<HTMLTextAreaElement>("#dialogue-input").disabled = disabled;
-    this.required<HTMLButtonElement>("#dialogue-submit").disabled = disabled;
+    this.required<HTMLButtonElement>("#dialogue-submit").disabled =
+      !this.dialogueReady || voiceBusy;
     this.required<HTMLButtonElement>("#voice-input-control").disabled =
       !this.dialogueReady || this.dialogueBusy || this.voiceInputAction === "none";
     this.required<HTMLSelectElement>("#microphone-select").disabled =

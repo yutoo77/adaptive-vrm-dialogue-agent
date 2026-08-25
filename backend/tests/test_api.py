@@ -1,3 +1,7 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -117,6 +121,71 @@ def test_dialogue_rejects_an_unknown_response_style() -> None:
     )
 
     assert response.status_code == 422
+
+
+class BlockingProvider:
+    name = "mock"
+    model = "blocking-mock"
+    ready = True
+    configuration_message = None
+
+    def __init__(self) -> None:
+        self.started = Event()
+        self.cancelled = Event()
+
+    async def generate_reply(
+        self,
+        message: str,
+        context: DialogueContext,
+        response_style: ResponseStyle,
+        request_id: str,
+    ) -> ProviderReply:
+        del message, context, response_style, request_id
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+
+
+def test_active_dialogue_can_be_cancelled_without_saving_conversation_or_memory() -> None:
+    provider = BlockingProvider()
+    conversation_store = ConversationMemoryStore()
+    memory_store = PersistentMemoryStore.in_memory()
+    app = create_app(
+        settings=Settings(),
+        provider=provider,
+        conversation_store=conversation_store,
+        persistent_memory_store=memory_store,
+    )
+
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as executor:
+        pending_response = executor.submit(
+            client.post,
+            "/api/dialogue",
+            json=dialogue_payload("覚えておいて：保存しない"),
+        )
+        assert provider.started.wait(timeout=2)
+
+        duplicate = client.post(
+            "/api/dialogue",
+            json=dialogue_payload("同じ会話へ二重送信"),
+        )
+        cancellation = client.delete(f"/api/dialogue/sessions/{SESSION_A}/active")
+        dialogue_response = pending_response.result(timeout=5)
+        second_cancellation = client.delete(f"/api/dialogue/sessions/{SESSION_A}/active")
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "dialogue_in_progress"
+    assert cancellation.status_code == 200
+    assert cancellation.json() == {"session_id": SESSION_A, "cancelled": True}
+    assert dialogue_response.status_code == 409
+    assert dialogue_response.json()["detail"]["code"] == "dialogue_cancelled"
+    assert provider.cancelled.is_set()
+    assert conversation_store.history(SESSION_A) == ()
+    assert memory_store.count() == 0
+    assert second_cancellation.json() == {"session_id": SESSION_A, "cancelled": False}
 
 
 def test_mock_remembers_recent_context_within_one_session() -> None:

@@ -33,6 +33,7 @@ const MEMORY_ITEM: PersistentMemoryItem = {
 };
 
 const MEMORY_GATEWAY = {
+  cancelActiveDialogue: async (sessionId: string) => ({ session_id: sessionId, cancelled: true }),
   listMemories: async () => ({ items: [], total: 0 }),
   createMemory: async (content: string) => ({ item: { ...MEMORY_ITEM, content }, created: true }),
   updateMemory: async (_memoryId: string, content: string) => ({
@@ -43,7 +44,12 @@ const MEMORY_GATEWAY = {
   clearMemories: async () => ({ deleted_count: 0 }),
 } satisfies Pick<
   DialogueGateway,
-  "listMemories" | "createMemory" | "updateMemory" | "deleteMemory" | "clearMemories"
+  | "cancelActiveDialogue"
+  | "listMemories"
+  | "createMemory"
+  | "updateMemory"
+  | "deleteMemory"
+  | "clearMemories"
 >;
 
 const RESPONSE: DialogueResponse = {
@@ -81,6 +87,7 @@ function createCallbacks() {
   const memoryBusy: boolean[] = [];
   const performances: PerformancePlan[] = [];
   let conversationResets = 0;
+  let cancellations = 0;
   const callbacks: DialogueCallbacks = {
     onConnectionChange: (health) => connections.push(health),
     onMessage: (role, text) => messages.push([role, text]),
@@ -93,6 +100,9 @@ function createCallbacks() {
     onMemoryChange: (turns, maxTurns) => memories.push([turns, maxTurns]),
     onPersistentMemoriesChange: (items) => persistentMemories.push(items),
     onMemoryNotice: (message) => memoryNotices.push(message),
+    onCancelled: () => {
+      cancellations += 1;
+    },
     onPersistentMemoryBusyChange: (value) => memoryBusy.push(value),
     onConversationReset: () => {
       conversationResets += 1;
@@ -113,6 +123,9 @@ function createCallbacks() {
     performances,
     get conversationResets() {
       return conversationResets;
+    },
+    get cancellations() {
+      return cancellations;
     },
   };
 }
@@ -141,6 +154,23 @@ it("resets one backend conversation session", async () => {
   await expect(client.resetSession("session-test-alpha")).resolves.toEqual({
     session_id: "session-test-alpha",
     cleared_turns: 2,
+  });
+});
+
+it("requests cancellation for one active backend dialogue", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(String(input)).toContain("/dialogue/sessions/session-test-alpha/active");
+    expect(init?.method).toBe("DELETE");
+    return new Response(
+      JSON.stringify({ session_id: "session-test-alpha", cancelled: true }),
+      { status: 200 },
+    );
+  });
+  const client = new DialogueClient(fetchMock, "/api", 1000);
+
+  await expect(client.cancelActiveDialogue("session-test-alpha")).resolves.toEqual({
+    session_id: "session-test-alpha",
+    cancelled: true,
   });
 });
 
@@ -202,6 +232,80 @@ it("turns an unstructured backend failure into actionable recovery guidance", as
 });
 
 describe("DialogueController", () => {
+  it("cancels an active response without adding an assistant message or error", async () => {
+    const cancelActiveDialogue = vi.fn(async (sessionId: string) => ({
+      session_id: sessionId,
+      cancelled: true,
+    }));
+    const gateway: DialogueGateway = {
+      ...MEMORY_GATEWAY,
+      getHealth: async () => READY_HEALTH,
+      sendMessage: async (_message, _sessionId, _responseStyle, signal) =>
+        new Promise<DialogueResponse>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+      cancelActiveDialogue,
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+    };
+    const speech: SpeechOutput = {
+      speak: vi.fn(),
+      toggle: vi.fn(),
+      stop: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const observed = createCallbacks();
+    const controller = new DialogueController(gateway, observed.callbacks, speech);
+
+    await controller.initialize();
+    expect(controller.send("途中で止める")).toBe(true);
+    await vi.waitFor(() => expect(observed.busy).toEqual([true]));
+    expect(controller.cancelResponse()).toBe(true);
+    await vi.waitFor(() => expect(observed.busy).toEqual([true, false]));
+
+    expect(cancelActiveDialogue).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{32}$/));
+    expect(observed.messages).toEqual([["user", "途中で止める"]]);
+    expect(observed.errors).toEqual([]);
+    expect(observed.cancellations).toBe(1);
+    expect(observed.states.at(-1)).toBe("idle");
+    expect(speech.stop).toHaveBeenCalledTimes(3);
+    expect(speech.speak).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("does not claim cancellation when the backend has no active generation", async () => {
+    const gateway: DialogueGateway = {
+      ...MEMORY_GATEWAY,
+      getHealth: async () => READY_HEALTH,
+      sendMessage: async (_message, _sessionId, _responseStyle, signal) =>
+        new Promise<DialogueResponse>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+      cancelActiveDialogue: async (sessionId) => ({ session_id: sessionId, cancelled: false }),
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+    };
+    const observed = createCallbacks();
+    const controller = new DialogueController(gateway, observed.callbacks);
+
+    await controller.initialize();
+    expect(controller.send("停止対象がない場合")).toBe(true);
+    await vi.waitFor(() => expect(observed.busy).toEqual([true]));
+    expect(controller.cancelResponse()).toBe(true);
+    await vi.waitFor(() => expect(observed.busy).toEqual([true, false]));
+
+    expect(observed.cancellations).toBe(0);
+    expect(observed.errors.at(-1)).toContain("停止対象を確認できませんでした");
+    expect(observed.states.at(-1)).toBe("idle");
+    controller.dispose();
+  });
+
   it("sends only the explicitly selected response style", async () => {
     const sentStyles: string[] = [];
     const gateway: DialogueGateway = {

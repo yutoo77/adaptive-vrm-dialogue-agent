@@ -41,7 +41,7 @@ Avatarが学習効果を必ず高める、Voiceが常に使いやすい、とは
 | 領域 | 現在地 | 根拠 |
 | --- | --- | --- |
 | VRM | 表示、Placeholder、状態・表情・姿勢・視線、Reduced Motion | Browser実モデル確認、Frontend Test |
-| Text dialogue | Mock/OpenAI境界、明示返答スタイル4種、入力/応答検証、Timeout、Request ID | API/Controller Test、Mock Browser Demo |
+| Text dialogue | Mock/OpenAI境界、明示返答スタイル4種、入力/応答検証、生成中の停止、Timeout、Request ID | API/Controller Test、Mock Browser Demo、停止時非保存Test |
 | Voice output | VOICEVOX、停止、再再生、Fallback | 実Engine固定10件、Browser確認 |
 | Lip Sync | 実WAVへScaleした5母音と句境界Cue | Timing固定10件、実VRM確認 |
 | Voice input | Push-to-Talk、マイク選択、自動停止、Draft確認 | 自動Testと実マイク1件。Noise評価は未完了 |
@@ -79,13 +79,17 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 
 利用者が「短く・自然・詳しく・やさしく」を明示選択し、BackendまでSchemaで伝える。声・表情・文章から能力や感情を推定せず、選択を長期保存しない。Mockは差を決定的に再現し、OpenAI利用時も同じ4種類を固定Instructionへ変換する。
 
+### 停止をFrontendだけの見せかけにしない
+
+生成中の停止はBrowser側の表示を消すだけで終わらせず、Session別のBackend Provider Taskへ伝える。停止受付と保存開始の境界を排他制御し、受付済みTurnは通常履歴にも明示長期記憶にも追加しない。既に保存開始へ入った場合は停止不成立として示し、取消できたように見せない。
+
 ## 完成条件
 
 ### Local Application
 
 - READMEだけでCleanなWindows環境から起動できる。
 - MockでText対話を無料・外部AI送信なしで再現できる。
-- 実Provider利用時に、複数Turnの自然な会話、生成Cancel、費用・送信範囲を評価できる。
+- 実Provider利用時に、複数Turnの自然な会話、停止到達時間、費用・送信範囲を評価できる。生成Cancelの機構自体はMockで検証済みだが、実ProviderへのRequestはまだ評価していない。
 - 長期記憶は利用者が明示許可した内容だけとし、参照理由の確認、編集、削除、全削除ができる。
 - 一つのTurnで本文、声、表情、視線、しぐさが矛盾せず、停止・割り込み時に一緒にResetできる。
 - VRM、VOICEVOX、Microphoneのどれかが失敗しても、利用可能な経路を残す。
@@ -132,5 +136,6 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 6. Mockで再現でき、実Providerへ交換できる境界。
 7. 利用者を推測せず、明示選択を型付き契約でProviderまで通すAdaptive Interaction。
 8. 成功率だけでなくFailure Caseと一般化の限界を残す評価姿勢。
+9. 停止受付と会話・長期記憶の保存開始を分け、取消結果を偽らないConcurrency設計。
 
 実装詳細は[ARCHITECTURE.md](ARCHITECTURE.md)、公開前後の優先順位は[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)を参照する。

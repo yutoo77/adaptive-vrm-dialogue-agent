@@ -115,7 +115,7 @@ export function createAppMarkup(): string {
               <button id="voice-input-control" class="voice-input-button" type="button" aria-label="音声入力は現在利用できません" title="音声入力は現在利用できません" disabled>
                 <span class="voice-input-icon" aria-hidden="true"></span>
               </button>
-              <button id="dialogue-submit" class="send-button" type="submit" aria-label="送信" disabled><span aria-hidden="true">↑</span></button>
+              <button id="dialogue-submit" class="send-button" type="submit" data-mode="send" aria-label="送信" title="送信" disabled><span aria-hidden="true">↑</span></button>
             </form>
             <p id="dialogue-error" class="dialogue-error" role="alert" hidden></p>
             <div id="voice-input-status" class="voice-input-status" data-voice-input-state="checking">

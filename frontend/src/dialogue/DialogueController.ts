@@ -5,6 +5,7 @@ import {
 } from "../types/character";
 import { DialogueApiError } from "./DialogueClient";
 import type {
+  DialogueCancellationResponse,
   DialogueHealth,
   DialogueResponse,
   DialogueRole,
@@ -25,6 +26,7 @@ export interface DialogueGateway {
     responseStyle: ResponseStyle,
     signal?: AbortSignal,
   ) => Promise<DialogueResponse>;
+  readonly cancelActiveDialogue: (sessionId: string) => Promise<DialogueCancellationResponse>;
   readonly resetSession: (sessionId: string, signal?: AbortSignal) => Promise<SessionResetResponse>;
   readonly listMemories: (signal?: AbortSignal) => Promise<PersistentMemoryListResponse>;
   readonly createMemory: (content: string, signal?: AbortSignal) => Promise<PersistentMemoryMutationResponse>;
@@ -58,6 +60,7 @@ export interface DialogueCallbacks {
   readonly onPersistentMemoriesChange?: (items: readonly PersistentMemoryItem[]) => void;
   readonly onPersistentMemoryBusyChange?: (busy: boolean) => void;
   readonly onMemoryNotice?: (message: string) => void;
+  readonly onCancelled?: () => void;
   readonly onConversationReset?: () => void;
 }
 
@@ -70,6 +73,8 @@ export class DialogueController {
   private busy = false;
   private memoryBusy = false;
   private disposed = false;
+  private cancelRequested = false;
+  private cancellationRequest: Promise<DialogueCancellationResponse> | null = null;
   private sessionId: string;
   private responseStyle: ResponseStyle = "balanced";
 
@@ -115,6 +120,23 @@ export class DialogueController {
     }
 
     void this.performSend(message, this.responseStyle);
+    return true;
+  }
+
+  public cancelResponse(): boolean {
+    if (!this.busy || this.disposed || this.cancelRequested) return false;
+    this.cancelRequested = true;
+    this.speechOutput?.stop();
+    this.clearIdleTimer();
+    this.callbacks.onClearError();
+    this.callbacks.onCharacterState("idle");
+
+    const activeRequest = this.requestController;
+    const cancellation = this.gateway.cancelActiveDialogue(this.sessionId);
+    this.cancellationRequest = cancellation;
+    void cancellation
+      .finally(() => activeRequest?.abort(new DOMException("Response cancelled by the user.", "AbortError")))
+      .catch(() => undefined);
     return true;
   }
 
@@ -210,6 +232,10 @@ export class DialogueController {
         controller.signal,
       );
       if (this.disposed) return;
+      if (this.cancelRequested) {
+        await this.finishCancellation();
+        return;
+      }
       this.callbacks.onLatency?.(Math.max(0, Math.round(performance.now() - startedAt)));
       this.callbacks.onMemoryChange?.(response.memory_turns, response.memory_max_turns);
       this.callbacks.onSummaryChange?.(response.session_summary_available);
@@ -221,6 +247,10 @@ export class DialogueController {
         } catch (error: unknown) {
           this.callbacks.onError(`長期記憶は保存されましたが、一覧を更新できませんでした。${this.getPublicError(error)}`);
         }
+      }
+      if (this.cancelRequested) {
+        await this.finishCancellation();
+        return;
       }
       this.callbacks.onCharacterState(performanceEmotionToState(response.performance.emotion));
       this.callbacks.onPerformancePlan?.(response.performance);
@@ -234,6 +264,10 @@ export class DialogueController {
       }
     } catch (error: unknown) {
       if (this.disposed) return;
+      if (this.cancelRequested) {
+        await this.finishCancellation();
+        return;
+      }
       this.callbacks.onError(this.getPublicError(error));
       this.callbacks.onCharacterState("error");
       this.idleTimer = globalThis.setTimeout(() => {
@@ -242,7 +276,31 @@ export class DialogueController {
     } finally {
       if (this.requestController === controller) this.requestController = null;
       this.busy = false;
+      this.cancelRequested = false;
+      this.cancellationRequest = null;
       if (!this.disposed) this.callbacks.onBusyChange(false);
+    }
+  }
+
+  private async finishCancellation(): Promise<void> {
+    try {
+      const response = await this.cancellationRequest;
+      if (this.disposed) return;
+      if (response?.cancelled) {
+        this.callbacks.onCancelled?.();
+      } else {
+        this.callbacks.onError("応答は既に完了していたか、Backendで停止対象を確認できませんでした。");
+      }
+    } catch (error: unknown) {
+      if (!this.disposed) {
+        this.callbacks.onError(`Backendへ停止を通知できませんでした。${this.getPublicError(error)}`);
+      }
+    } finally {
+      if (!this.disposed) {
+        this.speechOutput?.stop();
+        this.clearIdleTimer();
+        this.callbacks.onCharacterState("idle");
+      }
     }
   }
 

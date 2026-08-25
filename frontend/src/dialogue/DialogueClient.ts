@@ -1,5 +1,6 @@
 import { isResponseStyle } from "./types";
 import type {
+  DialogueCancellationResponse,
   DialogueHealth,
   DialogueProviderName,
   DialogueResponse,
@@ -73,6 +74,19 @@ export class DialogueClient {
     );
     if (!isSessionResetResponse(payload)) {
       throw new DialogueApiError("Backendから不正な会話リセット情報が返りました。");
+    }
+    return payload;
+  }
+
+  public async cancelActiveDialogue(sessionId: string): Promise<DialogueCancellationResponse> {
+    const payload = await this.request(
+      `/dialogue/sessions/${encodeURIComponent(sessionId)}/active`,
+      { method: "DELETE" },
+      undefined,
+      5_000,
+    );
+    if (!isDialogueCancellationResponse(payload)) {
+      throw new DialogueApiError("Backendから不正な応答停止情報が返りました。");
     }
     return payload;
   }
@@ -226,6 +240,14 @@ function isDialogueResponse(value: unknown): value is DialogueResponse {
     typeof value["session_summary_available"] === "boolean" &&
     typeof value["relevant_memory_count"] === "number" &&
     (value["saved_memory"] === null || isPersistentMemoryItem(value["saved_memory"]))
+  );
+}
+
+function isDialogueCancellationResponse(value: unknown): value is DialogueCancellationResponse {
+  return (
+    isRecord(value) &&
+    typeof value["session_id"] === "string" &&
+    typeof value["cancelled"] === "boolean"
   );
 }
 
