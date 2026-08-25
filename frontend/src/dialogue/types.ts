@@ -5,6 +5,36 @@ export type DialogueRole = "user" | "assistant";
 export const RESPONSE_STYLES = ["concise", "balanced", "detailed", "beginner"] as const;
 export type ResponseStyle = (typeof RESPONSE_STYLES)[number];
 
+export interface CharacterVoiceProfile {
+  readonly provider: "voicevox";
+  readonly speaker_id: number;
+  readonly speed_scale: number;
+  readonly pitch_scale: number;
+  readonly intonation_scale: number;
+}
+
+export interface CharacterPerformanceProfile {
+  readonly maximum_intensity: number;
+  readonly cue_intensity_scale: number;
+  readonly default_voice_style: "neutral" | "warm" | "bright" | "gentle" | "serious";
+}
+
+export interface CharacterProfile {
+  readonly id: string;
+  readonly version: string;
+  readonly display_name: string;
+  readonly short_name: string;
+  readonly tagline: string;
+  readonly self_reference: string;
+  readonly user_reference: string;
+  readonly speech_principles: readonly string[];
+  readonly values: readonly string[];
+  readonly avoided_expressions: readonly string[];
+  readonly theme_colors: readonly [string, string, string];
+  readonly voice: CharacterVoiceProfile;
+  readonly performance: CharacterPerformanceProfile;
+}
+
 export interface DialogueHealth {
   readonly status: "ready" | "configuration_error";
   readonly provider: DialogueProviderName;
@@ -16,6 +46,7 @@ export interface DialogueHealth {
   readonly session_summary_enabled: boolean;
   readonly persistent_memory_enabled: boolean;
   readonly persistent_memory_count: number;
+  readonly character: CharacterProfile;
 }
 
 export interface PersistentMemoryItem {

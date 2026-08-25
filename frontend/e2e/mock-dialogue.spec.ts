@@ -15,7 +15,9 @@ test("free Mock dialogue completes one browser round trip", async ({ page }) => 
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Adaptive Character" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "月白 しずく" })).toBeVisible();
+  await expect(page.locator("#character-version")).toHaveText("v1.0.0");
+  await expect(page.locator("#character-tagline")).toHaveText("静かに寄り添い、考えをほどく案内役");
   await expect(page.locator("#dialogue-provider")).toHaveText("ローカル");
 
   const input = page.getByRole("textbox", { name: "メッセージ" });
@@ -26,6 +28,7 @@ test("free Mock dialogue completes one browser round trip", async ({ page }) => 
   const dialogueLog = page.locator("#dialogue-log");
   await expect(dialogueLog.locator(".is-user p")).toHaveText("こんにちは");
   await expect(dialogueLog.locator(".is-assistant p")).toContainText("今日はどんなことを話そうか");
+  await expect(dialogueLog.locator(".is-assistant > span")).toHaveText("しずく");
   await expect(page.locator("#dialogue-memory")).toContainText("直近 1 / 10往復");
   await expect(page.getByRole("button", { name: "送信" })).toBeEnabled();
   await expect(page.locator("#dialogue-error")).toBeHidden();

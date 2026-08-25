@@ -1,12 +1,13 @@
 # Architecture
 
-更新日: 2026-08-25 / 対象Version: v0.4 + Voice + Local Memory + Adaptive Performance + Adaptive Interaction + Cancellation + Streaming
+更新日: 2026-08-25 / 対象Version: v0.5 Character Identity + v0.4 Natural Conversation
 
 ## 現在の構成
 
 ```mermaid
 flowchart LR
     User["利用者"] --> UI["UI modules\nMarkup・入力・状態・診断表示"]
+    Profile["CharacterProfile v1\nIdentity・Voice・Performance・Theme"] --> UI
     UI --> Style["ResponseStyle\n短く・自然・詳しく・やさしく"]
     Style --> DC["DialogueController\n送信・停止とAvatar状態を調整"]
     DC --> Client["DialogueClient\nNDJSON・Timeout・停止・応答検証"]
@@ -17,15 +18,18 @@ flowchart LR
     API <--> LongMemory["PersistentMemoryStore\n明示登録・SQLite・編集/削除"]
     LongMemory --> Retrieval["文字重なり検索\n関連最大3件・Local"]
     API --> Provider{"Provider境界\n本文・文脈・明示Style"}
+    Profile --> Provider
     Provider --> Mock["Mock Provider\n無料・外部送信なし"]
     Provider --> OpenAI["OpenAI Responses API\n明示設定時のみ"]
     Provider --> Plan["Bounded PerformancePlan\n感情・強度・開始しぐさ・途中Cue・声色"]
+    Profile --> Plan
     Plan --> DC
 
     DC --> Segmenter["StreamingSpeechSegmenter\n閉じた文・120文字上限"]
     Segmenter --> SpeechQueue["StreamingSpeechQueue\n合成順・再生順・停止"]
     SpeechQueue --> SpeechClient["SpeechClient / Controller\nWAV検証・再生・再生し直し"]
     SpeechClient --> SpeechAPI["FastAPI /api/speech\nWAV・Request ID"]
+    Profile --> SpeechAPI
     SpeechAPI --> Voicevox["VOICEVOX Engine\nLocalhostのみ"]
     SpeechClient --> Envelope["WAV振幅Envelope\n20ms Frame"]
     Voicevox --> Timing["母音・アクセント句Timing\n上限制約付きHeader"]
@@ -52,7 +56,7 @@ flowchart LR
     DC -->|"voice style / intensity"| SpeechClient
 ```
 
-現在はFrontend、Backendに加えて、音声出力を試す場合だけローカルVOICEVOX Engineを起動する構成である。音声入力はBackend process内のfaster-whisperを使う。Session別の短期履歴と要約、所有者が管理するSQLite長期記憶がある。認証、Tools、Vision、Embedding/RAGはない。
+現在はFrontend、Backendに加えて、音声出力を試す場合だけローカルVOICEVOX Engineを起動する構成である。Version付き`CharacterProfile`はBackendのCode定義を唯一のSourceとし、Health APIからFrontendへ公開する。音声入力はBackend process内のfaster-whisperを使う。Session別の短期履歴と要約、所有者が管理するSQLite長期記憶がある。認証、Tools、Vision、Embedding/RAGはない。
 
 ## 主要な処理の流れ
 
@@ -61,13 +65,13 @@ flowchart LR
 3. `DialogueClient`が画面内で生成した`session_id`、本文、`response_style`を`POST /api/dialogue/stream`へ送り、`application/x-ndjson`の`start -> text_delta* -> complete | error`を検証する。35秒でClient Timeoutにし、生成中の送信Buttonは`応答を停止`へ変わり、操作時は`DELETE /api/dialogue/sessions/{session_id}/active`を送る。
 4. FastAPIがPydanticで入力を検証し、Request IDを発行する。同じSessionの生成Taskを一つだけ`ActiveDialogue` Registryへ登録し、重複生成を409で拒否する。
 5. `ConversationMemoryStore`から同じSessionの直近履歴と要約を取り出し、`PersistentMemoryStore`から入力に文字列上関連する最大3件を検索する。
-6. Context Dataを命令ではなく参照情報として区切り、`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。OpenAIは`StructuredDialogueOutput`のRaw JSON Deltaから、完全にDecodeできた`reply`文字だけを公開する。Split EscapeやUnicode Surrogateは揃うまでBufferし、`performance` JSONを画面へ流さない。
+6. Context Dataを命令ではなく参照情報として区切り、Version付きCharacter Profileと`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。Profileは利用者入力・履歴・記憶より上位の固定`instructions`に置き、会話Dataから上書きしない。OpenAIは`StructuredDialogueOutput`のRaw JSON Deltaから、完全にDecodeできた`reply`文字だけを公開する。Split EscapeやUnicode Surrogateは揃うまでBufferし、`performance` JSONを画面へ流さない。
 7. Browserは`text_delta`を一つの仮Assistant Messageへ追加する。同時に、`。！？!?`または改行で閉じた文だけをStreaming Speech Queueへ渡す。句読点のない長文は120文字以内で読点・空白を優先して分割し、未完の短い語句は最終応答までBufferする。
 8. 停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider Stream TaskをCancelし、仮Message、RAM履歴、明示長期記憶を破棄して`idle`へ戻す。既に保存開始へ入った場合は停止未成立として示し、成功扱いを偽らない。
 9. 成功した利用者発話と最終応答だけを1往復としてRAMへ追加し、10往復を超えた古い履歴を短文要約へ圧縮する。
 10. `覚えておいて：内容`に一致した成功Turnだけは、明示記憶としてSQLiteへ保存する。
-11. Provider完了後、PydanticとFrontendで最終本文と、許可済みEnum・0〜1強度・開始しぐさ1件・途中Cue最大2件の`PerformancePlan`を再検証し、仮Messageを確定する。本文は常に`textContent`で表示し、途中Deltaと最終本文が異なる場合は先行音声を破棄する。
-12. VOICEVOX合成Queueと再生Queueを分け、前の文を再生中に次の閉じた文を順番に合成する。母音長を実WAV長へScaleして5口形Lip Syncを行い、最終Plan到着後にGestureとCueを適用する。停止・失敗は合成Request、未再生文、口形、予約Cueを破棄する。
+11. Provider完了後、PydanticとFrontendで最終本文と、許可済みEnum・0〜1強度・開始しぐさ1件・途中Cue最大2件の`PerformancePlan`を再検証する。さらにProfileの最大強度、感情とVoice Style/Gestureの許可組合せ、Cue強度ScaleをBackendで決定的に適用してから仮Messageを確定する。本文は常に`textContent`で表示し、途中Deltaと最終本文が異なる場合は先行音声を破棄する。
+12. VOICEVOX合成Queueと再生Queueを分け、前の文を再生中に次の閉じた文を順番に合成する。Profileのspeed/pitch/intonationを`audio_query`へ適用し、母音長を実WAV長へScaleして5口形Lip Syncを行う。最終Plan到着後にGestureとCueを適用し、停止・失敗は合成Request、未再生文、口形、予約Cueを破棄する。
 13. 失敗時は仮Messageと先行音声Queueを破棄し、履歴も長期記憶も増やさず、秘密情報を含まない案内を表示して再送可能な状態へ戻す。既に再生された音声だけは取り消せない。
 
 「新しい会話」は現在のSessionを`DELETE /api/dialogue/sessions/{session_id}`で消去してから、新しいSession IDへ切り替える。別Sessionの履歴は混ぜない。
@@ -88,7 +92,7 @@ adaptive-vrm-dialogue-agent/
 │  ├─ src/ui/           # DOMと利用者向け表示
 │  └─ src/vrm/          # Three.js、VRM読込、表情・姿勢・待機動作
 ├─ backend/
-│  ├─ app/              # FastAPI、設定、Schema、Provider
+│  ├─ app/              # FastAPI、Character Profile、設定、Schema、Provider
 │  ├─ scripts/          # Model準備と固定Scenario評価
 │  └─ tests/            # API、Provider、Speech、MemoryのTest
 ├─ docs/
@@ -111,6 +115,7 @@ adaptive-vrm-dialogue-agent/
 | --- | --- | --- |
 | createAppMarkup | 静的DOM、初期Label、入力Controlの構造 | Event、通信、状態変更 |
 | UIController | Event調整、状態、返答スタイル選択、送信/停止Button、短いエラー、Accessibility | Provider固有処理、APIキー、静的Markup生成 |
+| CharacterProfile | Version付き名前、口調、価値観、避ける表現、Theme、VOICEVOX prosody、演技上限 | 会話履歴、利用者の長期記憶、任意Animation命令、VRM本体 |
 | renderDeveloperPanel | 診断用ViewModelのDOM描画 | Viewer/Providerの状態所有 |
 | Latency表示 | 各Controllerが測った直近のBrowser往復時間を整形 | 永続保存、同一Turnの合計とみなすこと |
 | DialogueController | Busy、生成停止、状態遷移、表示順序、Session IDと返答スタイルのSession内保持 | HTTP詳細、会話本文と返答スタイルの永続保存 |
@@ -124,9 +129,9 @@ adaptive-vrm-dialogue-agent/
 | FastAPI | 入力と返答スタイル検証、Request ID、Session別Active Task、停止/保存境界、Provider呼出、観測可能Log | UI、永続会話 |
 | ConversationMemoryStore | Session分離、直近10往復、決定的要約、Reset、最大Session数 | Disk保存、意味検索、個人Profile |
 | PersistentMemoryStore | SQLite CRUD、明示保存、重複防止、文字重なり検索 | 暗号化、Embedding、通常会話の自動保存 |
-| Provider | Mock/OpenAI差異の吸収、明示Style適用、reply Delta・最終本文・制限付きPerformancePlan・任意Token使用量の生成 | 利用者能力の推定、Tool、履歴の所有、自由形式のAvatar命令 |
-| OpenAI評価Script | 明示Gate、架空4 Turn/Text/Speech Streaming、Request上限、段階Latency・Token・費用Snapshot・停止Probe | API Key・本文・WAV出力、実Data、一般化性能の主張、自動定期実行 |
-| Speech Provider | VOICEVOXの2段階API、Timeout、WAV検証 | Browser再生、Lip Sync、音声ライブラリ規約の自動判定 |
+| Provider | Mock/OpenAI差異の吸収、Profileと明示Style適用、reply Delta・最終本文・制限付きPerformancePlan・任意Token使用量の生成 | 利用者能力の推定、Tool、履歴の所有、会話DataによるProfile上書き、自由形式のAvatar命令 |
+| OpenAI評価Script | 明示Gate、架空4 Turn/Text/Speech/Character Identity、Request上限、Latency・Token・費用Snapshot・停止Probe | API Key・WAV出力、実Data、一般化性能の主張、自動定期実行 |
+| Speech Provider | VOICEVOXの2段階API、Profile prosody適用、Timeout、WAV検証 | Browser再生、Lip Sync、声の主観品質判定、音声ライブラリ規約の自動判定 |
 | Transcription Provider | local faster-whisperの遅延Load、CPU推論、推論Lock | 録音保存、利用者確認の省略 |
 | VRMViewer | Scene、Model lifecycle、描画、Fallback | AI通信、会話判断 |
 | CharacterController | 許可済み状態、表情、姿勢、視線、演技強度 | 自由形式のAgent Action |
@@ -151,7 +156,7 @@ adaptive-vrm-dialogue-agent/
 ## Dataと外部通信
 
 - Mock: 入力はBrowserとローカルBackend内だけで処理する。
-- OpenAI: 所有者が`DIALOGUE_PROVIDER=openai`とAPIキーを明示した場合だけ、今回の入力Text、直近履歴、Session要約、関連長期記憶をOpenAI APIへ送る。現在は`store=False`だが、これはZero Data Retentionを意味せず、標準のAbuse Monitoring保持はOpenAI側のData Controlに従う。
+- OpenAI: 所有者が`DIALOGUE_PROVIDER=openai`とAPIキーを明示した場合だけ、固定Character Profile、今回の入力Text、直近履歴、Session要約、関連長期記憶をOpenAI APIへ送る。現在は`store=False`だが、これはZero Data Retentionを意味せず、標準のAbuse Monitoring保持はOpenAI側のData Controlに従う。
 - VOICEVOX: 音声化するTextをローカルEngineの`/audio_query`と`/synthesis`へ送る。接続先はLoopback HTTPだけを許可する。
 - Push-to-Talk: 録音はBrowserからLoopbackのFastAPIへだけ送る。faster-whisperは端末内で推論し、録音Bytesと認識本文を永続保存・通常Log出力しない。
 - Microphone選択: Permission取得後に`enumerateDevices()`で音声入力だけを列挙し、選択した`deviceId`はMemory内だけで保持する。切断時は既定へFallbackする。
@@ -205,6 +210,7 @@ adaptive-vrm-dialogue-agent/
 - Local起動はWindows script中心。CIはUbuntuでTest/Buildするが、Linux/macOSの対話Demo起動は未確認。
 - 通常のVOICEVOX `/synthesis`はClient切断後もEngine側処理を直ちにCancelできない。実験的なCancel APIは現段階では採用しない。
 - 閉じた文は最終Schema検証前に再生できるため、既に聞こえた内容は取消不能である。最終`PerformancePlan`より早く始まる最初の文は中立速度になり得る。
+- Character ProfileはCode定義1種類で、UI編集、複数Profile切替、Turnをまたぐ感情の余韻、独自VRMとの結合は未実装である。
 - Lip SyncはVOICEVOXの5母音Timingへ対応したが、子音・撥音・促音・無声化母音は音量と近接母音で近似する。
 - `small`のCPU推論は5.621秒音声で約6.8秒かかり、長い発話の即時性が弱い。実マイクとNoise評価も未完了。
 
@@ -223,7 +229,7 @@ flowchart LR
     Conversation -. concrete use case only .-> Tools["Bounded Tools / Vision"]
 ```
 
-目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> reply-only Streaming -> 文単位Speech Queue`まで実装した。Natural Conversationの次は、v0.5 Character Identityで本文・声・身体表現の一貫性を上げるSliceを優先する。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
+目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> reply-only Streaming -> 文単位Speech Queue -> Version付きCharacter Profile`まで実装した。v0.5の次のSliceは、独自VRM、Turnをまたぐ感情の余韻、視線・Gesture頻度をProfileへ統合する。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
 
 ## 別Repositoryへ分ける条件
 

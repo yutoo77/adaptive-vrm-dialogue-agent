@@ -56,24 +56,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .brand-block { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-copy { min-width: 0; }
+.brand-title-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .brand-monogram {
   display: grid;
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid #c9cee0;
+  border: 1px solid color-mix(in srgb, var(--character-accent, #8f82c7) 34%, #d8dbe8);
   border-radius: 11px;
-  color: #3e4a70;
+  color: var(--character-primary, #3e4a70);
   background:
     radial-gradient(circle at 68% 28%, rgb(255 255 255 / 94%) 0 16%, transparent 17%),
-    linear-gradient(145deg, #fbfcff, #e8eafb);
+    linear-gradient(145deg, var(--character-light, #fbfcff), color-mix(in srgb, var(--character-accent, #8f82c7) 18%, white));
   font-family: ui-serif, Georgia, serif;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: -.02em;
 }
 .brand-block h1 { overflow: hidden; margin: 0; font-size: clamp(18px, 1.6vw, 23px); font-weight: 680; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
+.brand-copy p { overflow: hidden; margin: 2px 0 0; color: var(--muted); font-size: 10px; letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
+.character-version { color: var(--violet); font-size: 9px; font-weight: 700; letter-spacing: .05em; white-space: nowrap; }
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 410px; align-items: start; gap: 16px; }
 .viewer-card, .control-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); }
@@ -434,6 +438,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   .brand-block { gap: 9px; }
   .brand-monogram { width: 30px; height: 30px; border-radius: 9px; font-size: 10px; }
   .brand-block h1 { font-size: 17px; }
+  .brand-copy p { max-width: 220px; font-size: 9px; }
   .workspace { gap: 10px; }
   .viewer-card, .control-panel { border-radius: 15px; }
   .character-viewport { height: 38vh; min-height: 290px; max-height: 360px; }

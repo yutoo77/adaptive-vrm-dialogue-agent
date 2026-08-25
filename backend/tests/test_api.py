@@ -7,6 +7,7 @@ from threading import Event
 import pytest
 from fastapi.testclient import TestClient
 
+from app.character_profile import DEFAULT_CHARACTER_PROFILE
 from app.config import ConfigurationError, Settings
 from app.conversation import ConversationMemoryStore, DialogueContext
 from app.interaction import ResponseStyle
@@ -67,6 +68,7 @@ def test_health_reports_mock_without_exposing_a_secret() -> None:
         "session_summary_enabled": True,
         "persistent_memory_enabled": True,
         "persistent_memory_count": 0,
+        "character": DEFAULT_CHARACTER_PROFILE.model_dump(mode="json"),
     }
 
 
@@ -75,14 +77,17 @@ def test_mock_dialogue_returns_a_traceable_response() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["reply"] == "こんにちは。今日はどんなことを話そうか？"
+    assert payload["reply"] == "こんにちは。しずくだよ。今日はどんなことを話そうか？"
     assert payload["response_style"] == "balanced"
     assert payload["performance"] == {
         "emotion": "happy",
         "intensity": 0.64,
         "gesture": "soft_bounce",
         "voice_style": "bright",
-        "cues": [{"at": 0.278, "gesture": "small_nod", "intensity": 0.461}],
+        "cues": [
+            {"at": 0.217, "gesture": "small_nod", "intensity": 0.378},
+            {"at": 0.435, "gesture": "head_tilt", "intensity": 0.326},
+        ],
     }
     assert payload["provider"] == "mock"
     assert payload["model"] == "mock-v1"

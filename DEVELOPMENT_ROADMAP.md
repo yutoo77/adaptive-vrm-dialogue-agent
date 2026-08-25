@@ -12,7 +12,7 @@
 
 ## 現在のRelease目標
 
-`v0.4 Natural Conversation`のEngineering Sliceは完了した。生成停止と非保存契約、実OpenAI固定4 Turn、reply-only Streaming、文単位VOICEVOX Queue、初文・本文完了・発話開始の分離計測まで実装・評価済みである。次の主要Sliceは`v0.5 Character Identity`で本文・声・身体表現の一貫性を高める。
+`v0.4 Natural Conversation`は完了し、`v0.5 Character Identity`の基盤Sliceも実装した。`月白 しずく v1.0.0`の口調・価値観・避ける表現・Theme・VOICEVOX prosody・演技上限を一つのSchemaから本文、声、演技、UIへ接続し、実OpenAI 4 Scenario 26/26、実VOICEVOX 10/10で確認済みである。次は独自VRMと、Turnをまたぐ感情・視線・Gesture頻度を同Profileへ統合する。
 
 ### Public Portfolio Gate
 
@@ -122,14 +122,15 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 | 対象 | 自動確認 | 実動作確認 | 残るGap |
 | --- | --- | --- | --- |
-| Frontend | Type/lint/build、Vitest 77件、Playwright 6件（Mock一往復・Text/Speech Streaming・返答スタイル・生成停止・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
-| Backend | Ruff、Pytest 64件、pip check | Mock/VOICEVOX Health、実OpenAI固定4 Turn・Text/Speech Streaming | 多様な実会話、複数回の分散 |
+| Frontend | Type/lint/build、Vitest 79件、Playwright 6件（Profile検証・Mock一往復・Text/Speech Streaming・返答スタイル・生成停止・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
+| Backend | Ruff、Pytest 69件、pip check | Mock/VOICEVOX Health、実OpenAI固定4 Turn・Text/Speech/Character Identity | 多様な実会話、複数回の分散 |
 | Voice output | API/WAV/Stop/Timing/文分割/順序/失敗Test | 実VOICEVOX 10/10、実Pipeline 1件 | Engine処理の途中Cancel、利用者評価 |
 | Voice input | Permission/無音/Cancel/マイクTest | 実マイク短文1件 | Noiseを含む固定10文 |
 | Performance | Schema/Cue/Reduced Motion Test | 固定10文10/10、実VRM | 皮肉・未知言い換え |
 | Interaction | 4種のSchema/API/UI伝播、不明値拒否、OpenAI Instruction Test | Mock 4種、実OpenAI固定4 Turn 21/21 | 多様な文章品質、利用者評価 |
 | Generation cancel | Active Stream Task、仮Text破棄、停止/保存境界、非保存、UI復帰をAPI/Unit/Browserで確認 | Mock API、実Streamingは100ms後Cancelから0msで終了 | 上流計算/請求の停止保証 |
 | Streaming | Split JSON/Unicode/外側空白、NDJSON、仮Message、文単位Speech Queue、最終CommitをProvider/API/Client/Controller/Browserで確認 | 実OpenAI 42 Delta、先行表示796ms、Speech準備2,877ms前倒し | 複数回分散、可聴Latency、利用者評価 |
+| Character Identity | Profile Schema/Version、Instruction境界、演技意味整合、VOICEVOX prosody、UI反映 | 実OpenAI 4/4・26/26、Profile音声10/10 | 独自VRM、聴取評価、Turn間の余韻 |
 | Memory | Session/Persistence/Search Test | CRUD UI | 言い換え検索の定量評価 |
 | Security | Local pattern scan、Gitleaks CI、npm/pip audit 0件 | Loopback bind/ignored data、Public RepositoryのSecret scanning確認 | 新しい依存・Data追加時の継続監査 |
 
@@ -141,7 +142,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 最初の主要Sliceは、実Providerを任意で使った自然な複数Turn会話とする。実API Request、費用発生、外部送信は所有者の明示承認後だけ行う。
 
-- Character Profile、会話履歴、明示記憶、返答スタイルを一つのContext契約へ整理する。
+- [x] Character Profile、会話履歴、明示記憶、返答スタイルを一つのContext契約へ整理する。
 - [x] 生成Cancel、発話・Cue・口形の一括停止を設計・実装する。
 - [x] Text Streamingを、Raw Structured JSONを見せないreply-only契約で実装する。
 - [x] 閉じた文だけを先行合成し、順序、停止、最終本文一致を持つSpeech Queueを実装する。
@@ -158,11 +159,18 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 ### P2 — v0.5 Character Identity and Embodied Consistency
 
-- 自作または公開条件を満たす改変Avatarを用意し、和風StageとVisual identityを統一する。
-- Character Profileに口調、価値観、避ける表現、Voice設定をVersion付きで定義する。
-- Turnをまたぐ感情の余韻、視線、頷き、Gestureの頻度とBlendを調整する。
-- 本文、Voice Style、表情、視線、Gestureが矛盾しない固定Scenarioを評価する。
-- Reduced MotionとModel差異のFallbackを維持する。
+- [ ] 自作または公開条件を満たす改変Avatarを用意し、和風StageとVisual identityを統一する。
+- [x] Character Profileに口調、価値観、避ける表現、Theme、Voice設定をVersion付きで定義する。
+- [x] ProfileをMock/OpenAI本文、VOICEVOX prosody、演技上限、UIへ接続する。
+- [ ] Turnをまたぐ感情の余韻、視線、頷き、Gestureの頻度とBlendを調整する。
+- [x] 本文、Voice Style、表情、Gestureが矛盾しない固定Scenarioを評価する。
+- [x] Reduced MotionとModel差異のFallbackを維持する。
+
+基盤SliceのEvidence:
+
+- 実OpenAI `gpt-5.6-luna` 4/4 Scenario、26/26固定Check、既知費用$0.00120408。
+- 実VOICEVOX 0.25.2でProfile prosodyを適用し、固定10文10/10。
+- ProfileはCode定義1種類。独自VRM、聴取比較、Turn間の感情連続性は完了条件に未到達。
 
 ### P3 — v0.6 Trusted Memory
 

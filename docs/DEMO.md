@@ -6,7 +6,7 @@ This guide provides a repeatable three-minute demonstration and a one-minute sho
 
 1. Complete `./setup.ps1` and start VOICEVOX if voice output is required.
 2. Put a permitted VRM at `frontend/public/models/private/character.vrm`, or prepare it for selection in the browser.
-3. Run `./start_demo.ps1` and confirm the compact `ローカル` provider badge, the response style `自然`, and the selected VRM name, or the placeholder if no model is used.
+3. Run `./start_demo.ps1` and confirm `月白 しずく v1.0.0`, the compact `ローカル` provider badge, the response style `自然`, and the selected VRM name, or the placeholder if no model is used.
 4. If voice output is part of the demo, open `音声設定`, send one short message, and confirm that VOICEVOX plays it. A healthy idle state is intentionally not repeated on the main screen.
 5. Do not show API keys, local files, terminal logs, microphone device names, or private long-term memory in a recording.
 
@@ -19,6 +19,8 @@ Explain that the goal is not to place unrelated AI features on one screen. The a
 ### 2. Text-to-performance vertical slice — 60 seconds
 
 Send `何ができるの？`.
+
+Point out that the header name, version, short message label, voice defaults, and performance limits come from the same versioned Character Profile. The current VRM is still a separately licensed sample, so do not describe the original Avatar as complete.
 
 Show the flow:
 
@@ -48,7 +50,7 @@ Do not store sensitive or real personal information in a public demo.
 
 ### 5. Evidence and limits — 20 seconds
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, only one fixed real-OpenAI speech-streaming run rather than broad or user-rated conversation quality, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
+Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, one Code-defined Character Profile, no original VRM yet, only fixed real-OpenAI runs rather than broad or user-rated conversation quality, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
 
 ## One-minute route
 

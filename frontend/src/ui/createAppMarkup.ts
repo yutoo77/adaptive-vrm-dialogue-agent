@@ -22,8 +22,14 @@ export function createAppMarkup(): string {
     <div class="app-shell">
       <header class="app-header">
         <div class="brand-block">
-          <span class="brand-monogram" aria-hidden="true">AC</span>
-          <h1>Adaptive Character</h1>
+          <span id="character-monogram" class="brand-monogram" aria-hidden="true">AC</span>
+          <div class="brand-copy">
+            <div class="brand-title-row">
+              <h1 id="character-name">Adaptive Character</h1>
+              <small id="character-version" class="character-version" hidden></small>
+            </div>
+            <p id="character-tagline" hidden></p>
+          </div>
         </div>
       </header>
 
@@ -76,7 +82,7 @@ export function createAppMarkup(): string {
         <aside class="control-panel" aria-label="キャラクター操作">
           <section class="dialogue-section">
             <div class="conversation-header">
-              <h2>会話</h2>
+              <h2 id="conversation-title">会話</h2>
               <div class="conversation-actions">
                 <small id="dialogue-provider" class="dialogue-provider" data-status="offline" aria-describedby="dialogue-privacy">確認中</small>
                 <label class="response-style-control" for="response-style-select">

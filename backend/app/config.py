@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Literal, cast
 from urllib.parse import urlparse
 
+from app.character_profile import DEFAULT_CHARACTER_PROFILE
+
 ProviderName = Literal["mock", "openai"]
 TranscriptionDevice = Literal["cpu", "cuda"]
 
@@ -48,7 +50,7 @@ class Settings:
     request_timeout_seconds: float = 30.0
     max_output_tokens: int = 240
     voicevox_base_url: str = "http://127.0.0.1:50021"
-    voicevox_speaker_id: int = 14
+    voicevox_speaker_id: int = DEFAULT_CHARACTER_PROFILE.voice.speaker_id
     voicevox_timeout_seconds: float = 30.0
     transcription_model: str = "small"
     transcription_device: TranscriptionDevice = "cpu"
@@ -74,7 +76,14 @@ class Settings:
             "VOICEVOX_BASE_URL",
             "http://127.0.0.1:50021",
         )
-        voicevox_speaker_id = int(_read_number("VOICEVOX_SPEAKER_ID", "14", 0, 100000))
+        voicevox_speaker_id = int(
+            _read_number(
+                "VOICEVOX_SPEAKER_ID",
+                str(DEFAULT_CHARACTER_PROFILE.voice.speaker_id),
+                0,
+                100000,
+            )
+        )
         voicevox_timeout = _read_number("VOICEVOX_TIMEOUT_SECONDS", "30", 1, 120)
         transcription_model = os.getenv("TRANSCRIPTION_MODEL", "small").strip()
         if transcription_model not in {"tiny", "base", "small", "medium", "large-v3", "turbo"}:
