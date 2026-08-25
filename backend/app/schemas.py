@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.character_profile import CharacterProfile
+from app.continuity import EmotionalContinuity
 from app.interaction import ResponseStyle
 from app.performance import PerformancePlan
 
@@ -27,6 +28,7 @@ class DialogueResponse(BaseModel):
     reply: str
     response_style: ResponseStyle
     performance: PerformancePlan
+    continuity: EmotionalContinuity
     provider: Literal["mock", "openai"]
     model: str
     request_id: str
@@ -44,6 +46,7 @@ class DialogueResponse(BaseModel):
 class SessionResetResponse(BaseModel):
     session_id: str
     cleared_turns: int
+    cleared_emotional_state: bool
 
 
 class DialogueCancellationResponse(BaseModel):
@@ -60,6 +63,8 @@ class HealthResponse(BaseModel):
     session_memory_enabled: bool
     session_memory_max_turns: int
     session_summary_enabled: bool
+    emotional_continuity_enabled: bool
+    emotional_continuity_max_carry_turns: int
     persistent_memory_enabled: bool
     persistent_memory_count: int
     character: CharacterProfile

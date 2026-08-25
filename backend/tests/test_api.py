@@ -66,6 +66,8 @@ def test_health_reports_mock_without_exposing_a_secret() -> None:
         "session_memory_enabled": True,
         "session_memory_max_turns": 10,
         "session_summary_enabled": True,
+        "emotional_continuity_enabled": True,
+        "emotional_continuity_max_carry_turns": 2,
         "persistent_memory_enabled": True,
         "persistent_memory_count": 0,
         "character": DEFAULT_CHARACTER_PROFILE.model_dump(mode="json"),
@@ -86,8 +88,17 @@ def test_mock_dialogue_returns_a_traceable_response() -> None:
         "voice_style": "bright",
         "cues": [
             {"at": 0.217, "gesture": "small_nod", "intensity": 0.378},
-            {"at": 0.435, "gesture": "head_tilt", "intensity": 0.326},
         ],
+    }
+    assert payload["continuity"] == {
+        "emotion": "happy",
+        "intensity": 0.64,
+        "turn_index": 1,
+        "turns_held": 1,
+        "carried_from_previous": False,
+        "gaze_behavior": "engaged",
+        "motion_scale": 1.042,
+        "gesture_budget": 2,
     }
     assert payload["provider"] == "mock"
     assert payload["model"] == "mock-v1"
@@ -319,6 +330,23 @@ def test_mock_remembers_recent_context_within_one_session() -> None:
     assert follow_up.json()["memory_turns"] == 2
 
 
+def test_mock_carries_emotional_residue_for_two_neutral_turns_then_decays() -> None:
+    client = build_client()
+
+    initial = client.post("/api/dialogue", json=dialogue_payload("今日は疲れた"))
+    first_carry = client.post("/api/dialogue", json=dialogue_payload("そうなんだ"))
+    second_carry = client.post("/api/dialogue", json=dialogue_payload("なるほど"))
+    expired = client.post("/api/dialogue", json=dialogue_payload("わかった"))
+
+    assert initial.json()["continuity"]["emotion"] == "gentle"
+    assert first_carry.json()["continuity"]["emotion"] == "gentle"
+    assert first_carry.json()["continuity"]["carried_from_previous"] is True
+    assert first_carry.json()["performance"]["gesture"] == "none"
+    assert second_carry.json()["continuity"]["carried_from_previous"] is True
+    assert expired.json()["continuity"]["emotion"] == "neutral"
+    assert expired.json()["continuity"]["carried_from_previous"] is False
+
+
 def test_dialogue_sessions_are_isolated_and_can_be_reset() -> None:
     client = build_client()
     client.post("/api/dialogue", json=dialogue_payload("星空について話そう", SESSION_A))
@@ -329,7 +357,11 @@ def test_dialogue_sessions_are_isolated_and_can_be_reset() -> None:
 
     assert "まだ前の話題はない" in isolated.json()["reply"]
     assert reset.status_code == 200
-    assert reset.json() == {"session_id": SESSION_A, "cleared_turns": 1}
+    assert reset.json() == {
+        "session_id": SESSION_A,
+        "cleared_turns": 1,
+        "cleared_emotional_state": True,
+    }
     assert "まだ前の話題はない" in after_reset.json()["reply"]
 
 

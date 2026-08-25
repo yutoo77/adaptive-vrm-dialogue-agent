@@ -70,9 +70,9 @@ VOICEVOX Engine `0.25.2`、`VOICEVOX:冥鳴ひまり`、Profile prosodyを適用
 
 ## 自動確認
 
-- Backend: Ruff、Pytest 69件
-- Frontend: TypeScript、ESLint、Vitest 79件、production build
-- Browser: Playwright 6件。Profile名・Version・Tagline、Mock会話Label、Mobile初期Viewportを含む
+- Backend: Ruff、Pytest 75件
+- Frontend: TypeScript、ESLint、Vitest 83件、production build
+- Browser: Playwright 7件。Profile名・Version・Tagline、Mock会話Label、2 Turn感情、Mobile初期Viewportを含む
 - Profileの不正Version/Color、過大強度、危険場面の明るい声・跳ねるGestureを拒否または補正
 - VOICEVOXへ送る`audio_query`のspeed/pitch/intonationをContract testで固定
 
@@ -95,7 +95,7 @@ Gateがない場合はRequestを送らず終了する。ScriptはAPI Keyを出�
 
 - 4件の固定Smokeであり、人格の一般的な一貫性や長期利用時の印象を保証しない。
 - Character Profileは現在1種類のCode定義で、UI編集・Import・複数Profile切替は未実装。
-- 感情は1 Turnごとで、Turnをまたぐ余韻、Gesture頻度、視線の個性はまだProfile化していない。
+- Turnをまたぐ余韻、Gesture反復抑制、視線Behaviorは後続の[Embodied Continuity v0.6評価](embodied-continuity-2026-08-25.md)で実装・評価した。ただし最大2 TurnのHeuristicと限定的な日本語Markerであり、人格の一般的な自然さを保証しない。
 - 最初のStreaming音声は最終PerformancePlan前に始まるため、Frontendの再生速度は中立になり得る。一方、VOICEVOX側のProfile prosodyは全合成へ適用される。
 - VOICEVOX話者・VRM Assetの権利はSource CodeのMIT Licenseとは別に扱う。
 - 独自VRMと実際の聴取比較が終わるまで、Character Identity全体の完成とは主張しない。

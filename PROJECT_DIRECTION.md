@@ -48,6 +48,7 @@ Avatarが学習効果を必ず高める、Voiceが常に使いやすい、とは
 | Memory | Session 10往復、決定的要約、明示SQLite、CRUD、Local検索 | Session分離/Persistence Test |
 | Adaptive Performance | 制限付き感情・Gesture・強度・Cue・Voice Style | 固定10文、Failure Case、実VRM比較 |
 | Character Identity | `月白 しずく v1.0.0`の口調・価値観・禁止表現・Theme・Voice・演技上限を本文/音声/演技/UIへ接続 | 実OpenAI 4/4・26/26、実VOICEVOX 10/10。独自VRM・聴取評価は未完了 |
+| Embodied Continuity | Session内の感情を最大2 Turn減衰し、明示変化を優先。同じGestureの反復を抑え、発話後も弱い表情・視線・呼吸へ戻す | API/Unit/Browser、実OpenAI初回24/26・修正後26/26。主観評価は未完了 |
 | Portfolio quality | README、Screenshot、License、CI、Security/Notice、Demo Guide | Public RepositoryとCIで確認 |
 
 Toolを実行するBounded Agent、RAG、Visionは未実装であり、現在の成果として主張しない。
@@ -78,7 +79,11 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 
 ### 返答スタイルを推測しない
 
-利用者が「短く・自然・詳しく・やさしく」を明示選択し、BackendまでSchemaで伝える。声・表情・文章から能力や感情を推定せず、選択を長期保存しない。Mockは差を決定的に再現し、OpenAI利用時も同じ4種類を固定Instructionへ変換する。
+利用者が「短く・自然・詳しく・やさしく」を明示選択し、BackendまでSchemaで伝える。能力や潜在的な心理状態は推定しない。短期感情では「疲れた」「嬉しい」など現在状態を明言した限定的な日本語表現だけを決定的に扱い、曖昧なSentiment分類は行わない。選択も感情状態も長期保存しない。Mockは差を決定的に再現し、OpenAI利用時も同じ4種類を固定Instructionへ変換する。
+
+### 一つのTurnで演技を終わらせない
+
+Providerの中立出力へ直前感情を無制限に残すのではなく、Session RAM内で最大2 Turnだけ減衰させる。現在状態の明示は古い余韻より優先し、同じGestureの連発は抑える。Backendが解決した視線Behaviorと動作ScaleだけをFrontendへ渡し、任意Bone命令は引き続き許さない。「新しい会話」で履歴と一緒に消えるため、感情を隠れた長期Profileへ変えない。
 
 ### 停止をFrontendだけの見せかけにしない
 
@@ -100,7 +105,7 @@ Text表示より取消しにくい音声は、Token単位ではVOICEVOXへ渡さ
 - MockでText対話を無料・外部AI送信なしで再現できる。
 - 実Provider利用時に、複数Turnの会話、Streaming初文、本文完了、発話準備、停止到達時間、費用・送信範囲を評価できる。架空Dataによる実OpenAI固定4 Turn、Text Streaming 1件、Speech Streaming 1件は完了したが、多様な会話、複数回の分散、利用者が感じる自然さは未評価である。停止ProbeはLocal coroutineの終了だけを確認し、上流計算や請求の停止を保証しない。
 - 長期記憶は利用者が明示許可した内容だけとし、参照理由の確認、編集、削除、全削除ができる。
-- 一つのTurnで本文、声、表情、視線、しぐさが矛盾せず、停止・割り込み時に一緒にResetできる。
+- 本文、声、表情、視線、しぐさがTurn内で矛盾せず、次のTurnへは上限付きの余韻だけを残し、停止・Reset時に一緒に破棄できる。
 - VRM、VOICEVOX、Microphoneのどれかが失敗しても、利用可能な経路を残す。
 - Session、保存Data、外部送信先を利用者が理解し、Reset/Deleteできる。
 - 3〜5分Demoを重大停止なく完了できる。
@@ -134,6 +139,7 @@ Text表示より取消しにくい音声は、Token単位ではVOICEVOXへ渡さ
 - Voice: VOICEVOX/faster-whisper。無料だがLocal Resourceと各License条件が必要。
 - OpenAI: 任意。明示設定したRequestだけ料金と外部送信が発生する。2026-08-25の固定4 Turnは完了Request分で$0.001601、Text Streaming 1件は$0.0003424、Speech Pipeline 1件は$0.0003892。停止RequestはToken使用量を取得できず、費用不明として除外した。`store=False`はZero Data Retentionを意味しない。
 - Character Identity評価: 実OpenAI固定4件で$0.00120408。固定Profile、架空Scenarioだけを送信し、4/4 Scenario・26/26 Checkを通過したが、一般化性能とは扱わない。
+- Embodied Continuity評価: 実OpenAI固定3 Turnを2 Run実行し、初回24/26のFailureを補正後26/26。累計6 Request、10,623 input（Cached 4,997）/ 420 output tokens、既知費用$0.00172914。日本語限定Markerと固定ScenarioのSmokeであり、一般化性能とは扱わない。
 - Cloud/公開Server: 現在は不採用。認証、Data retention、費用上限を設計してから検討する。
 
 ## Portfolioで説明する中心
@@ -150,5 +156,6 @@ Text表示より取消しにくい音声は、Token単位ではVOICEVOXへ渡さ
 10. 実ProviderのLatency、Token、既知費用を記録し、停止時の上流費用を推測で埋めない評価境界。
 11. Structured Outputの型安全性と途中Text表示を両立し、最終検証前の演技・Memory Commitを許さないStreaming境界。
 12. 取消不能な先行音声を閉じた文だけに限定し、合成・再生の順序と失敗時破棄を独立Queueで扱うConcurrency設計。
+13. 感情を永続Profile化せず、Session RAM・最大2 Turn・明示変化優先という説明可能な境界で、表情・視線・呼吸の連続性を作る設計。
 
 実装詳細は[ARCHITECTURE.md](ARCHITECTURE.md)、公開前後の優先順位は[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)を参照する。

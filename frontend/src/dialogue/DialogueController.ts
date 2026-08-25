@@ -9,6 +9,7 @@ import type {
   DialogueHealth,
   DialogueResponse,
   DialogueRole,
+  EmotionalContinuity,
   PersistentMemoryClearResponse,
   PersistentMemoryDeleteResponse,
   PersistentMemoryItem,
@@ -66,6 +67,7 @@ export interface DialogueCallbacks {
   readonly onBusyChange: (busy: boolean) => void;
   readonly onCharacterState: (state: CharacterState) => void;
   readonly onPerformancePlan?: (performance: PerformancePlan) => void;
+  readonly onContinuityChange?: (continuity: EmotionalContinuity) => void;
   readonly onError: (message: string) => void;
   readonly onClearError: () => void;
   readonly onLatency?: (latencyMs: number) => void;
@@ -311,6 +313,7 @@ export class DialogueController {
         }
       }
       if (this.cancelRequested && await this.finishCancellation()) return;
+      this.callbacks.onContinuityChange?.(response.continuity);
       this.callbacks.onCharacterState(performanceEmotionToState(response.performance.emotion));
       this.callbacks.onPerformancePlan?.(response.performance);
       if (this.speechOutput) {

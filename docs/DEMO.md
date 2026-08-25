@@ -28,11 +28,13 @@ Show the flow:
 2. reply text appears incrementally through the typed NDJSON stream;
 3. the final schema validates before the UI displays the selected emotion, intensity, gesture, and cue count;
 4. VOICEVOX begins from the first closed sentence while later text is still arriving;
-5. the mouth follows the five-vowel timeline and the Avatar returns to `idle`.
+5. the mouth follows the five-vowel timeline and the Avatar returns to a weakened emotional baseline, or `idle` when the result is neutral.
 
 Mention that arbitrary bone names and scripts are not accepted. The plan is limited by a validated schema.
 
-Change `返し方` from `自然` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or emotion from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
+Change `返し方` from `自然` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or a hidden psychological profile from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
+
+Optional continuity check: send `今日は疲れた` and then a neutral follow-up such as `そうなんだ`. The second response should show `余韻` rather than starting a new large gesture, while the weakened gentle expression, gaze, and breathing remain. Then send `少し気持ちが軽くなった` and confirm that the explicit recovery replaces the old gentle state. This state remains in RAM for at most two turns and is cleared by `新しい会話`.
 
 If a response remains in `thinking`, the send button changes to `応答を停止`. Stopping returns the Avatar to `idle` without adding an assistant message or saving that turn to session or long-term memory. The default Mock is intentionally fast, so use the automated browser scenario and the cancellation evaluation record as repeatable evidence instead of adding an artificial production delay only for the live demo.
 
@@ -50,7 +52,7 @@ Do not store sensitive or real personal information in a public demo.
 
 ### 5. Evidence and limits — 20 seconds
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, one Code-defined Character Profile, no original VRM yet, only fixed real-OpenAI runs rather than broad or user-rated conversation quality, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
+Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, one Code-defined Character Profile, no original VRM yet, fixed Japanese emotion markers and a two-turn heuristic rather than broad or user-rated naturalness, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
 
 ## One-minute route
 

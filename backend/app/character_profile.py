@@ -141,6 +141,8 @@ _ALLOWED_GESTURES: dict[PerformanceEmotion, frozenset[PerformanceGesture]] = {
 def align_performance_with_character(
     plan: PerformancePlan,
     profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
+    *,
+    scale_cues: bool = True,
 ) -> PerformancePlan:
     """Keep emotional semantics and the selected identity consistent without accepting free-form motion."""
 
@@ -157,7 +159,8 @@ def align_performance_with_character(
         cue_gesture = cue.gesture
         if cue_gesture not in _ALLOWED_GESTURES[emotion] or cue_gesture == "none":
             cue_gesture = "small_nod"
-        cue_intensity = min(cue.intensity * profile.performance.cue_intensity_scale, intensity, maximum)
+        cue_scale = profile.performance.cue_intensity_scale if scale_cues else 1
+        cue_intensity = min(cue.intensity * cue_scale, intensity, maximum)
         cues.append(
             PerformanceCue(
                 at=cue.at,

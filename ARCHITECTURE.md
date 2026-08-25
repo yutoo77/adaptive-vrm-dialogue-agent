@@ -1,6 +1,6 @@
 # Architecture
 
-更新日: 2026-08-25 / 対象Version: v0.5 Character Identity + v0.4 Natural Conversation
+更新日: 2026-08-25 / 対象Version: v0.6 Embodied Continuity
 
 ## 現在の構成
 
@@ -23,7 +23,10 @@ flowchart LR
     Provider --> OpenAI["OpenAI Responses API\n明示設定時のみ"]
     Provider --> Plan["Bounded PerformancePlan\n感情・強度・開始しぐさ・途中Cue・声色"]
     Profile --> Plan
-    Plan --> DC
+    API <--> Affect["EmotionalContinuityStore\nSession RAM・最大2 Turn減衰"]
+    Affect --> Provider
+    Plan --> Affect
+    Affect --> DC
 
     DC --> Segmenter["StreamingSpeechSegmenter\n閉じた文・120文字上限"]
     Segmenter --> SpeechQueue["StreamingSpeechQueue\n合成順・再生順・停止"]
@@ -50,13 +53,14 @@ flowchart LR
     UI --> Viewer["VRMViewer\nThree.js・読込・描画"]
     Viewer --> Character["CharacterController\n表情・姿勢・視線・状態"]
     Viewer --> Motion["IdleMotionController\n瞬き・呼吸・微小動作"]
+    Viewer --> Gaze["GazeMotionController\n感情別の微小視線・Reduced Motion"]
     Viewer --> PerformanceMotion["PerformanceMotionController\n一回動作・Reduced Motion"]
     Timeline --> Viewer
     DC -->|"thinking / 感情状態 / error / idle"| Viewer
     DC -->|"voice style / intensity"| SpeechClient
 ```
 
-現在はFrontend、Backendに加えて、音声出力を試す場合だけローカルVOICEVOX Engineを起動する構成である。Version付き`CharacterProfile`はBackendのCode定義を唯一のSourceとし、Health APIからFrontendへ公開する。音声入力はBackend process内のfaster-whisperを使う。Session別の短期履歴と要約、所有者が管理するSQLite長期記憶がある。認証、Tools、Vision、Embedding/RAGはない。
+現在はFrontend、Backendに加えて、音声出力を試す場合だけローカルVOICEVOX Engineを起動する構成である。Version付き`CharacterProfile`はBackendのCode定義を唯一のSourceとし、Health APIからFrontendへ公開する。音声入力はBackend process内のfaster-whisperを使う。Session別の短期履歴・要約・最大2 Turnの感情状態と、所有者が管理するSQLite長期記憶がある。認証、Tools、Vision、Embedding/RAGはない。
 
 ## 主要な処理の流れ
 
@@ -65,16 +69,16 @@ flowchart LR
 3. `DialogueClient`が画面内で生成した`session_id`、本文、`response_style`を`POST /api/dialogue/stream`へ送り、`application/x-ndjson`の`start -> text_delta* -> complete | error`を検証する。35秒でClient Timeoutにし、生成中の送信Buttonは`応答を停止`へ変わり、操作時は`DELETE /api/dialogue/sessions/{session_id}/active`を送る。
 4. FastAPIがPydanticで入力を検証し、Request IDを発行する。同じSessionの生成Taskを一つだけ`ActiveDialogue` Registryへ登録し、重複生成を409で拒否する。
 5. `ConversationMemoryStore`から同じSessionの直近履歴と要約を取り出し、`PersistentMemoryStore`から入力に文字列上関連する最大3件を検索する。
-6. Context Dataを命令ではなく参照情報として区切り、Version付きCharacter Profileと`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。Profileは利用者入力・履歴・記憶より上位の固定`instructions`に置き、会話Dataから上書きしない。OpenAIは`StructuredDialogueOutput`のRaw JSON Deltaから、完全にDecodeできた`reply`文字だけを公開する。Split EscapeやUnicode Surrogateは揃うまでBufferし、`performance` JSONを画面へ流さない。
+6. Context Dataを命令ではなく参照情報として区切り、Version付きCharacter Profileと`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。直前の短期感情があれば命令ではないSession Dataとして渡す。Profileは利用者入力・履歴・記憶より上位の固定`instructions`に置き、会話Dataから上書きしない。OpenAIは`StructuredDialogueOutput`のRaw JSON Deltaから、完全にDecodeできた`reply`文字だけを公開する。Split EscapeやUnicode Surrogateは揃うまでBufferし、`performance` JSONを画面へ流さない。
 7. Browserは`text_delta`を一つの仮Assistant Messageへ追加する。同時に、`。！？!?`または改行で閉じた文だけをStreaming Speech Queueへ渡す。句読点のない長文は120文字以内で読点・空白を優先して分割し、未完の短い語句は最終応答までBufferする。
 8. 停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider Stream TaskをCancelし、仮Message、RAM履歴、明示長期記憶を破棄して`idle`へ戻す。既に保存開始へ入った場合は停止未成立として示し、成功扱いを偽らない。
 9. 成功した利用者発話と最終応答だけを1往復としてRAMへ追加し、10往復を超えた古い履歴を短文要約へ圧縮する。
 10. `覚えておいて：内容`に一致した成功Turnだけは、明示記憶としてSQLiteへ保存する。
-11. Provider完了後、PydanticとFrontendで最終本文と、許可済みEnum・0〜1強度・開始しぐさ1件・途中Cue最大2件の`PerformancePlan`を再検証する。さらにProfileの最大強度、感情とVoice Style/Gestureの許可組合せ、Cue強度ScaleをBackendで決定的に適用してから仮Messageを確定する。本文は常に`textContent`で表示し、途中Deltaと最終本文が異なる場合は先行音声を破棄する。
-12. VOICEVOX合成Queueと再生Queueを分け、前の文を再生中に次の閉じた文を順番に合成する。Profileのspeed/pitch/intonationを`audio_query`へ適用し、母音長を実WAV長へScaleして5口形Lip Syncを行う。最終Plan到着後にGestureとCueを適用し、停止・失敗は合成Request、未再生文、口形、予約Cueを破棄する。
+11. Provider完了後、PydanticとFrontendで最終本文と、許可済みEnum・0〜1強度・開始しぐさ1件・途中Cue最大2件の`PerformancePlan`を再検証する。さらにProfileの最大強度と意味整合を決定的に適用し、`EmotionalContinuityStore`が中立出力にだけ直前感情を最大2 Turn減衰して重ねる。利用者が「疲れた」「嬉しい」など現在状態を明示した場合は古い状態より優先し、同じ低強度Gestureの連発も抑える。解決後のPlanと連続性Dataを仮Message確定時にRAMへCommitする。本文は常に`textContent`で表示し、途中Deltaと最終本文が異なる場合は先行音声を破棄する。
+12. VOICEVOX合成Queueと再生Queueを分け、前の文を再生中に次の閉じた文を順番に合成する。Profileのspeed/pitch/intonationを`audio_query`へ適用し、母音長を実WAV長へScaleして5口形Lip Syncを行う。最終Plan到着後にGestureとCueを適用し、発話後は中立なら`idle`、非中立なら弱めた表情・視線・呼吸のBaselineへ戻す。停止・失敗は合成Request、未再生文、口形、予約Cueを破棄する。
 13. 失敗時は仮Messageと先行音声Queueを破棄し、履歴も長期記憶も増やさず、秘密情報を含まない案内を表示して再送可能な状態へ戻す。既に再生された音声だけは取り消せない。
 
-「新しい会話」は現在のSessionを`DELETE /api/dialogue/sessions/{session_id}`で消去してから、新しいSession IDへ切り替える。別Sessionの履歴は混ぜない。
+「新しい会話」は現在のSessionを`DELETE /api/dialogue/sessions/{session_id}`で消去し、短期履歴と感情状態を一緒に破棄してから、新しいSession IDへ切り替える。別Sessionの履歴や感情は混ぜない。
 
 Push-to-Talkは別経路で、利用者のButton操作後だけ`getUserMedia`を呼ぶ。録音Blobを`POST /api/transcription`へ送り、認識Textを送信せずDraftへ戻す。利用者が確認・修正した後に通常のText対話経路へ渡す。
 
@@ -128,15 +132,17 @@ adaptive-vrm-dialogue-agent/
 | TranscriptionClient | multipart、Timeout、JSON検証、公開Error | マイク制御、対話送信 |
 | FastAPI | 入力と返答スタイル検証、Request ID、Session別Active Task、停止/保存境界、Provider呼出、観測可能Log | UI、永続会話 |
 | ConversationMemoryStore | Session分離、直近10往復、決定的要約、Reset、最大Session数 | Disk保存、意味検索、個人Profile |
+| EmotionalContinuityStore | Session別の短期感情、最大2 Turn減衰、明示変化優先、Gesture反復抑制、視線・動作Scale | Disk保存、曖昧な心理推定、自由形式Animation |
 | PersistentMemoryStore | SQLite CRUD、明示保存、重複防止、文字重なり検索 | 暗号化、Embedding、通常会話の自動保存 |
 | Provider | Mock/OpenAI差異の吸収、Profileと明示Style適用、reply Delta・最終本文・制限付きPerformancePlan・任意Token使用量の生成 | 利用者能力の推定、Tool、履歴の所有、会話DataによるProfile上書き、自由形式のAvatar命令 |
-| OpenAI評価Script | 明示Gate、架空4 Turn/Text/Speech/Character Identity、Request上限、Latency・Token・費用Snapshot・停止Probe | API Key・WAV出力、実Data、一般化性能の主張、自動定期実行 |
+| OpenAI評価Script | 明示Gate、架空4 Turn/Text/Speech/Character Identity/3 Turn Continuity、Request上限、Latency・Token・費用Snapshot・停止Probe | API Key・WAV出力、実Data、一般化性能の主張、自動定期実行 |
 | Speech Provider | VOICEVOXの2段階API、Profile prosody適用、Timeout、WAV検証 | Browser再生、Lip Sync、声の主観品質判定、音声ライブラリ規約の自動判定 |
 | Transcription Provider | local faster-whisperの遅延Load、CPU推論、推論Lock | 録音保存、利用者確認の省略 |
 | VRMViewer | Scene、Model lifecycle、描画、Fallback | AI通信、会話判断 |
 | CharacterController | 許可済み状態、表情、姿勢、視線、演技強度 | 自由形式のAgent Action |
 | PerformanceMotionController | 許可済み一回Gesture、強度Clamp、Reduced Motion | 任意Bone操作、Animation File実行 |
 | PerformanceTimelineController | 実音声時間への開始・途中Gesture同期、余韻、停止時Cancel | 内容判断、任意Animation、Audio生成 |
+| GazeMotionController / IdleMotionController | 感情別の微小視線周期、呼吸・揺れScale、Reduced Motion | 視線からの心理推定、Model固有の見た目保証 |
 
 この分離により、VoiceやAgentを追加しても、APIキーやProvider処理をVRM制御へ混ぜずに済む。
 
@@ -165,6 +171,7 @@ adaptive-vrm-dialogue-agent/
 - Generation cancel: Session IDはURL内でBackendへ送るが通常Logへ記録しない。停止受付、Provider Taskの終了有無、処理時間だけを記録し、停止TurnはRAM/SQLiteへ追加しない。
 - VRM: Browser内のObject URLまたはローカル既定Pathから読む。外部Uploadはしない。
 - Session Memory: Backend RAM内に最大32 Session、各10往復と最大8個の要約断片を保持する。ResetまたはBackend終了で消え、Diskへ保存しない。
+- Emotional Continuity: Backend RAM内に最大32 Session、最大2 Turnの減衰状態だけを保持する。通常会話と同様にResetまたはBackend終了で消え、長期記憶へ保存しない。
 - Long-term Memory: 明示登録した最大500文字の項目を最大200件、`backend/.local/memory.sqlite3`へ保存する。UI/APIから確認、編集、削除できる。暗号化とBackupは行わない。
 - 永続Data: 明示登録した長期記憶だけSQLiteへ残る。通常会話、返答スタイル、PerformancePlan、画面上のMessageはReloadで消える。
 
@@ -210,7 +217,7 @@ adaptive-vrm-dialogue-agent/
 - Local起動はWindows script中心。CIはUbuntuでTest/Buildするが、Linux/macOSの対話Demo起動は未確認。
 - 通常のVOICEVOX `/synthesis`はClient切断後もEngine側処理を直ちにCancelできない。実験的なCancel APIは現段階では採用しない。
 - 閉じた文は最終Schema検証前に再生できるため、既に聞こえた内容は取消不能である。最終`PerformancePlan`より早く始まる最初の文は中立速度になり得る。
-- Character ProfileはCode定義1種類で、UI編集、複数Profile切替、Turnをまたぐ感情の余韻、独自VRMとの結合は未実装である。
+- Character ProfileはCode定義1種類で、UI編集、複数Profile切替、独自VRMとの結合は未実装である。Turn間感情は日本語の限定Markerと最大2 TurnのHeuristicであり、皮肉・曖昧表現・主観的な自然さは未評価である。
 - Lip SyncはVOICEVOXの5母音Timingへ対応したが、子音・撥音・促音・無声化母音は音量と近接母音で近似する。
 - `small`のCPU推論は5.621秒音声で約6.8秒かかり、長い発話の即時性が弱い。実マイクとNoise評価も未完了。
 
@@ -229,7 +236,7 @@ flowchart LR
     Conversation -. concrete use case only .-> Tools["Bounded Tools / Vision"]
 ```
 
-目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> reply-only Streaming -> 文単位Speech Queue -> Version付きCharacter Profile`まで実装した。v0.5の次のSliceは、独自VRM、Turnをまたぐ感情の余韻、視線・Gesture頻度をProfileへ統合する。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
+目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> reply-only Streaming -> 文単位Speech Queue -> Version付きCharacter Profile -> 2 Turn Embodied Continuity`まで実装した。次の独立したSliceは独自VRMとの見た目統合、または実利用者による会話・聴取評価とする。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
 
 ## 別Repositoryへ分ける条件
 

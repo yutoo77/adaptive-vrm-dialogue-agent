@@ -1,4 +1,4 @@
-import type { PerformancePlan } from "../types/character";
+import type { GazeBehavior, PerformanceEmotion, PerformancePlan } from "../types/character";
 
 export type DialogueProviderName = "mock" | "openai";
 export type DialogueRole = "user" | "assistant";
@@ -44,9 +44,22 @@ export interface DialogueHealth {
   readonly session_memory_enabled: boolean;
   readonly session_memory_max_turns: number;
   readonly session_summary_enabled: boolean;
+  readonly emotional_continuity_enabled: boolean;
+  readonly emotional_continuity_max_carry_turns: number;
   readonly persistent_memory_enabled: boolean;
   readonly persistent_memory_count: number;
   readonly character: CharacterProfile;
+}
+
+export interface EmotionalContinuity {
+  readonly emotion: PerformanceEmotion;
+  readonly intensity: number;
+  readonly turn_index: number;
+  readonly turns_held: number;
+  readonly carried_from_previous: boolean;
+  readonly gaze_behavior: GazeBehavior;
+  readonly motion_scale: number;
+  readonly gesture_budget: number;
 }
 
 export interface PersistentMemoryItem {
@@ -81,6 +94,7 @@ export interface DialogueResponse {
   readonly reply: string;
   readonly response_style: ResponseStyle;
   readonly performance: PerformancePlan;
+  readonly continuity: EmotionalContinuity;
   readonly provider: DialogueProviderName;
   readonly model: string;
   readonly request_id: string;
@@ -121,6 +135,7 @@ export type DialogueStreamEvent =
 export interface SessionResetResponse {
   readonly session_id: string;
   readonly cleared_turns: number;
+  readonly cleared_emotional_state: boolean;
 }
 
 export interface DialogueCancellationResponse {

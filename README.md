@@ -10,7 +10,7 @@ Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声
 
 このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
 
-現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queueに加え、Version付きCharacter Profile `月白 しずく v1.0.0`を実装しています。Profileは表示名だけでなく、本文の口調・価値観・避ける表現、VOICEVOXの話速/抑揚、演技上限、UI Themeへ接続しています。多様な会話での自然さ、独自VRM、利用者による聴取評価は今後の対象であり、完成済みとは主張しません。
+現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queue、Version付きCharacter Profile `月白 しずく v1.0.0`を実装しています。さらに、Session内の短期感情を最大2 Turnだけ減衰させ、発話後も弱い表情・視線・呼吸を残し、同じ頷きの連発を抑える`Embodied Continuity v0.6`まで接続しました。多様な会話での自然さ、独自VRM、利用者による聴取評価は今後の対象であり、完成済みとは主張しません。
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
@@ -40,7 +40,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 2. Backendから検証可能なText部分だけが順次表示される。
 3. 最終Schema検証後、返答内容に応じた感情・強度・しぐさが確定する。
 4. VOICEVOXが利用可能なら音声を再生し、5母音の口形を同期する。
-5. 途中Gestureと短い余韻の後、`idle`へ復帰する。
+5. 途中Gestureの後、現在の感情を弱めた表情・視線へ戻る。中立なら`idle`へ復帰する。
 
 3分版と1分版の説明順、失敗時の復帰手順は[Demo Guide](docs/DEMO.md)にまとめています。
 
@@ -55,6 +55,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 | Lip Sync | VOICEVOX母音Timingを`aa / ih / ou / ee / oh`へ同期し、音量Envelopeで開口量を調整 |
 | Avatar | VRM 1.0中心の読込、表情・姿勢・視線、瞬き・呼吸、モデル差異のFallback、3D Placeholder |
 | Adaptive Performance | 感情6種、Gesture 4種、Voice Style 5種、強度0〜1、途中Cue最大2件の制限付きPlan |
+| Embodied Continuity | Session別RAM感情、最大2 Turnの減衰、明示変化の優先、反復Gesture抑制、視線6種、発話後の感情Baseline |
 | Memory | Session別直近10往復、決定的要約、明示登録だけのSQLite長期記憶、CRUD、文字重なり検索 |
 | Visual identity | 深藍・白練・藤色を軸にしたCode-native Stage、状態連動の環境光、外部画像Assetなし |
 | Accessibility / UX | `prefers-reduced-motion`対応、演技強度3段階、Keyboard focus、文脈に応じた状態表示、段階的開示 |
@@ -80,27 +81,31 @@ Textは`POST /api/dialogue/stream`のNDJSONで順次表示します。OpenAIのS
 
 Providerが返せる演技はPydantic/TypeScript Schemaで制限しています。任意のBone名、角度、Script、Animation URLは受け付けません。Frontendでも値を再検証し、Model差異や不正応答を安全にFallbackします。
 
-### 4. 実音声時間に合わせる演技とLip Sync
+### 4. Turnをまたぐ短期感情と身体の余韻
+
+`EmotionalContinuityStore`が非中立感情をSession別RAMへ保持し、Providerが中立へ戻った場合だけ最大2 Turnまで減衰させます。利用者が「嬉しい」「気持ちが軽くなった」など現在の変化を明示した場合は古い状態より優先します。同じ低強度Gestureの連続は抑え、感情から視線Behaviorと呼吸・揺れScaleを決定します。発話後も弱い感情Baselineへ戻るため、返答ごとに表情が切れて見える状態を避けます。「新しい会話」で履歴と一緒に削除され、SQLiteへは保存しません。
+
+### 5. 実音声時間に合わせる演技とLip Sync
 
 VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、実際のWAV長へScaleします。口形は5母音、途中Gestureは近い句境界へ同期します。Timingが欠ける場合は音量ベースの単一口形へ戻ります。
 
-### 5. 明示型MemoryとData境界
+### 6. 明示型MemoryとData境界
 
 通常会話はRAMだけに保持します。長期記憶は「覚えておいて：...」または管理UIから追加した項目だけをSQLiteへ保存し、内容の確認、編集、個別削除、全削除を提供します。Embeddingを使わないため無料・Localですが、言い換えに弱いことも制約として明示しています。
 
-### 6. Local-firstとProvider境界
+### 7. Local-firstとProvider境界
 
 既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。実Provider評価も、明示Gate、固定Request数、架空Data、Token使用量と費用記録を持つ専用Scriptへ分離しています。VOICEVOX接続先もLoopback HTTPだけを許可します。
 
-### 7. 利用者を推測しないAdaptive Interaction
+### 8. 利用者を推測しないAdaptive Interaction
 
-返答の長さと説明量を「短く・自然・詳しく・やさしく」から利用者が明示選択します。選択値はPydantic/TypeScriptの同じ4種類に制限し、Mockでは差を決定的に再現、OpenAIでは固定した指示へ変換します。声や文面から能力・感情を推測せず、選択はSession内だけに保持してReload時に既定の「自然」へ戻します。
+返答の長さと説明量を「短く・自然・詳しく・やさしく」から利用者が明示選択します。選択値はPydantic/TypeScriptの同じ4種類に制限し、Mockでは差を決定的に再現、OpenAIでは固定した指示へ変換します。声や曖昧な文面から能力・感情を断定せず、短期感情の補正も利用者が明示した少数の表現だけに限定します。返答StyleはSession内だけに保持してReload時に既定の「自然」へ戻します。
 
-### 8. 会話を主役にする情報設計
+### 9. 会話を主役にする情報設計
 
 初期画面にはAvatar、会話履歴、入力だけを常時表示し、音声、記憶、演技調整、診断情報は必要なときに開く段階的開示へ整理しています。待機中の正常状態は繰り返し表示せず、処理中・失敗・利用者の判断が必要な状態だけを会話の近くへ出します。Nielsenの「システム状態の可視化」「利用者による制御」「不要情報を減らす」を判断基準として、Mobileでも入力欄が初期Viewport内に残ることをBrowser testで固定しています。
 
-### 9. Assetに依存しないVisual identity
+### 10. Assetに依存しないVisual identity
 
 Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材ではなくCSSのGradient、Border、Mask、Animationで描画しています。深藍・白練・藤色を基調にし、`CharacterState`を反映した`data-state`だけで、聞き取り時は青磁、思考時は藤色、発話時は水紋へ控えめな変化を加えます。環境演出は`prefers-reduced-motion`で停止し、Avatar制御や対話処理とは分離しています。
 
@@ -115,12 +120,14 @@ flowchart LR
     Dialogue -->|"NDJSON stream"| API["FastAPI"]
     Dialogue -. "DELETE active response" .-> API
     API <--> Session["Session Memory\nRAM + summary"]
+    API <--> Affect["Emotional Continuity\nRAM + 2-turn decay"]
     API <--> SQLite["Explicit Memory\nSQLite"]
     API --> Provider{"Provider"}
     Profile --> Provider
     Provider --> Mock["Mock\nlocal / free"]
     Provider --> OpenAI["OpenAI\nopt-in"]
     Provider --> Plan["Bounded\nPerformancePlan"]
+    Plan --> Affect
 
     UI --> PTT["MediaRecorder + VAD"]
     PTT --> Whisper["faster-whisper\nlocal CPU"]
@@ -131,7 +138,7 @@ flowchart LR
     Profile --> SpeechAPI
     Voicevox --> Timing["WAV + vowel / phrase timing"]
     Timing --> Avatar["Three.js + VRM\nvoice / face / gesture"]
-    Plan --> Avatar
+    Affect --> Avatar
     Dialogue --> Avatar
 ```
 
@@ -259,6 +266,8 @@ KeyはBackendだけが読みます。`VITE_`で始まる環境変数、README、
 
 Character Identity固定評価では、互いに独立した4 Scenarioで名前とAI透明性、無理な励ましの回避、危険場面の慎重な演技、人格上書き耐性を確認し、**26/26 Check**が成功しました。6,192 input（Cached 3,024）/ 425 output tokens、既知費用は**$0.00120408**です。実VOICEVOXもProfile prosodyで10/10合成できました。詳細と限界は[Character Identity評価](docs/evaluations/character-identity-2026-08-25.md)にあります。
 
+Embodied Continuity評価では`疲労 -> 中立的な橋渡し -> 明示的な回復`の固定3 Turnを実行しました。初回は回復を穏やかに保ちすぎて**24/26 Check**となり、明示された現在感情を優先する補正後に**26/26 Check**を通過しました。2 Run累計6 Request、10,623 input（Cached 4,997）/ 420 output tokens、既知費用は**$0.00172914**です。失敗と修正を含む詳細は[Embodied Continuity評価](docs/evaluations/embodied-continuity-2026-08-25.md)にあります。
+
 `store=False`を指定していますが、これはZero Data Retentionと同義ではありません。OpenAIの[Data controls](https://developers.openai.com/api/docs/guides/your-data)では、明示Opt-inがないAPI DataはModel Trainingへ使わない一方、標準のAbuse Monitoring LogにPrompt/Responseが最大30日含まれ得ると説明されています。機微情報を送らないでください。
 
 設定名は[backend/.env.example](backend/.env.example)で確認できます。Applicationは`.env`を自動読込しません。
@@ -296,12 +305,12 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e`はMock固定のBackendとFrontendを必要に応じて自動起動し、Chromiumで対話一往復、Text Streaming、返信中の文単位Speech Request、返答スタイル、生成中の応答停止、詳細設定の段階的開示、Mobile初期Viewportと横Overflowを確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
+`npm run test:e2e`はMock固定のBackendとFrontendを必要に応じて自動起動し、Chromiumで対話一往復、2 Turnの感情余韻、Text Streaming、返信中の文単位Speech Request、返答スタイル、生成中の応答停止、詳細設定の段階的開示、Mobile初期Viewportと横Overflowを確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
 
 2026-08-25時点の確認結果:
 
-- Frontend: TypeScript、ESLint、Vitest **79件**、Playwright browser smoke **6件**、production build成功
-- Backend: Ruff、Pytest **69件**、`pip check`成功
+- Frontend: TypeScript、ESLint、Vitest **83件**、Playwright browser smoke **7件**、production build成功
+- Backend: Ruff、Pytest **75件**、`pip check`成功
 - Dependency audit: npm **0件**、pip-audit **0件**の既知脆弱性
 - Browser: Desktop、390px幅、319px幅、実VRM、Mock対話、VOICEVOX、5母音Lip Sync、自動演技を確認
 - Browser console: warning/error **0件**
@@ -311,6 +320,7 @@ npm audit
 - 実OpenAI Streaming: **42 Delta**、初文 **3,321ms**、本文完了 **4,117ms**、先行表示 **796ms**、既知費用 **$0.0003424**
 - 実OpenAI + VOICEVOX: 最初の閉じた文 **3,602ms**、WAV準備 **6,142ms**、従来比較から **2,877ms**前倒し、既知費用 **$0.0003892**
 - Character Identity: 実OpenAI **4/4 Scenario・26/26 Check**、Profile prosodyの実VOICEVOX **10/10**、既知費用 **$0.00120408**
+- Embodied Continuity: 実OpenAI初回 **24/26**で弱点を検出、修正後 **26/26**、2 Run累計既知費用 **$0.00172914**
 
 固定Scenarioの成功は未知入力への一般化を保証しません。成功例だけでなく、否定表現・複合感情・Timing欠損・Stop/Failureを評価記録に残しています。
 
@@ -328,6 +338,7 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 - [Natural Conversation / 実OpenAI Streamingと3段階Latency](docs/evaluations/real-openai-streaming-2026-08-25.md)
 - [Natural Conversation / 文単位VOICEVOX Queue](docs/evaluations/streaming-speech-2026-08-25.md)
 - [Character Identity / 本文・声・演技の固定4 Scenario](docs/evaluations/character-identity-2026-08-25.md)
+- [Embodied Continuity / 3 Turnの短期感情・視線・Gesture](docs/evaluations/embodied-continuity-2026-08-25.md)
 - [Speech input方式の選定](docs/speech-input-decision.md)
 
 ## Repository構成
@@ -343,7 +354,7 @@ adaptive-vrm-dialogue-agent/
 │     ├─ ui/             # DOMと利用者向け表示
 │     └─ vrm/            # Three.js、VRM、表情・姿勢・動き
 ├─ backend/
-│  ├─ app/               # FastAPI、Character Profile、Schema、Provider、Memory
+│  ├─ app/               # FastAPI、Character Profile、Schema、Provider、Memory、Continuity
 │  ├─ scripts/           # Model準備と固定Scenario評価
 │  └─ tests/             # API、Provider、Speech、Memory Test
 ├─ docs/
@@ -365,8 +376,8 @@ adaptive-vrm-dialogue-agent/
 - SQLiteは暗号化していません。機微情報の保存には使えません。
 - 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
 - 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。実OpenAIは架空Dataの固定4 Turn、Text Streaming 1件、Speech Pipeline 1件だけで、多様な入力、再現分散、利用者が感じる自然さは未評価です。
-- Character Profileは現在`月白 しずく v1.0.0`のCode定義1種類です。複数Profile切替、UI編集、Turnをまたぐ感情の余韻、独自VRMとの統合、聴取評価は未完了です。
-- 自動演技のMock判定は日本語Keyword Ruleです。皮肉や未知の言い換えを正しく理解するとは限りません。
+- Character Profileは現在`月白 しずく v1.0.0`のCode定義1種類です。複数Profile切替、UI編集、独自VRMとの統合、聴取評価は未完了です。
+- 短期感情はRAM内で最大2 Turnだけ継続します。Mock分類と明示変化の補正は日本語Keyword Ruleなので、皮肉、複合感情、未知の言い換えを正しく理解するとは限りません。最適な減衰時間も利用者評価前の初期値です。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
 - production JavaScriptは約870kBで、Viteの500kB警告が出ます。
 - UIの静的MarkupとDeveloper Panel描画は分離済みですが、`UIController`には対話・Memory・Model操作のEvent制御が残り、主要画面を増やす場合は領域別Controller化が必要です。

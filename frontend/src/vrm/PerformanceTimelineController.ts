@@ -6,7 +6,7 @@ export type PerformanceTimelinePhase = "prepared" | "speaking" | "cue" | "linger
 export interface PerformanceTimelineOutput {
   readonly preparePerformance: (plan: PerformancePlan) => void;
   readonly playGesture: (gesture: PerformanceGesture, intensity: number) => void;
-  readonly returnToIdle: () => void;
+  readonly returnToBaseline: () => void;
   readonly reportPhase?: (phase: PerformanceTimelinePhase, cueIndex?: number, cueTotal?: number) => void;
 }
 
@@ -61,14 +61,14 @@ export class PerformanceTimelineController {
       this.idleTimer = globalThis.setTimeout(() => {
         this.idleTimer = null;
         if (!this.disposed) {
-          this.output.returnToIdle();
+          this.output.returnToBaseline();
           this.output.reportPhase?.("idle");
         }
       }, lingerMs);
       return;
     }
 
-    this.output.returnToIdle();
+    this.output.returnToBaseline();
     this.output.reportPhase?.("idle");
   }
 

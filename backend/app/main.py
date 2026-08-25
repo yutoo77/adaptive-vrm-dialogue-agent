@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from app.character_profile import DEFAULT_CHARACTER_PROFILE, CharacterProfile
 from app.config import Settings
+from app.continuity import EmotionalContinuityStore
 from app.conversation import ConversationMemoryStore
 from app.persistent_memory import (
     PersistentMemory,
@@ -87,6 +88,7 @@ def create_app(
     speech_provider: SpeechProvider | None = None,
     transcription_provider: TranscriptionProvider | None = None,
     conversation_store: ConversationMemoryStore | None = None,
+    emotional_continuity_store: EmotionalContinuityStore | None = None,
     persistent_memory_store: PersistentMemoryStore | None = None,
     character_profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
 ) -> FastAPI:
@@ -95,6 +97,7 @@ def create_app(
     resolved_speech_provider = speech_provider or build_speech_provider(resolved_settings, character_profile)
     resolved_transcription_provider = transcription_provider or build_transcription_provider(resolved_settings)
     resolved_conversation_store = conversation_store or ConversationMemoryStore()
+    resolved_emotional_continuity_store = emotional_continuity_store or EmotionalContinuityStore()
     resolved_persistent_memory_store = persistent_memory_store or PersistentMemoryStore()
     state_lock = asyncio.Lock()
     active_dialogue_lock = asyncio.Lock()
@@ -102,7 +105,7 @@ def create_app(
 
     app = FastAPI(
         title="Adaptive VRM Dialogue API",
-        version="0.5.0",
+        version="0.6.0",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
@@ -119,6 +122,8 @@ def create_app(
             session_memory_enabled=True,
             session_memory_max_turns=resolved_conversation_store.max_turns,
             session_summary_enabled=True,
+            emotional_continuity_enabled=True,
+            emotional_continuity_max_carry_turns=resolved_emotional_continuity_store.max_carry_turns,
             persistent_memory_enabled=True,
             persistent_memory_count=resolved_persistent_memory_store.count(),
             character=character_profile,
@@ -146,7 +151,12 @@ def create_app(
             try:
                 async with state_lock:
                     relevant_memories = resolved_persistent_memory_store.search(request.message)
-                    context = resolved_conversation_store.context(request.session_id, relevant_memories)
+                    continuity = resolved_emotional_continuity_store.current(request.session_id)
+                    context = resolved_conversation_store.context(
+                        request.session_id,
+                        relevant_memories,
+                        continuity,
+                    )
 
                 async with active_dialogue_lock:
                     if active_dialogue.cancel_requested:
@@ -188,6 +198,12 @@ def create_app(
                         request.session_id,
                         request.message,
                         result.text,
+                    )
+                    continuity_resolution = resolved_emotional_continuity_store.resolve(
+                        request.session_id,
+                        result.performance,
+                        character_profile,
+                        request.message,
                     )
                     session_summary_available = resolved_conversation_store.summary(request.session_id) is not None
             except _DialogueCancelled:
@@ -251,7 +267,8 @@ def create_app(
             return DialogueResponse(
                 reply=result.text,
                 response_style=request.response_style,
-                performance=result.performance,
+                performance=continuity_resolution.performance,
+                continuity=continuity_resolution.continuity,
                 provider=resolved_provider.name,
                 model=resolved_provider.model,
                 request_id=request_id,
@@ -304,7 +321,12 @@ def create_app(
 
                 async with state_lock:
                     relevant_memories = resolved_persistent_memory_store.search(request.message)
-                    context = resolved_conversation_store.context(request.session_id, relevant_memories)
+                    continuity = resolved_emotional_continuity_store.current(request.session_id)
+                    context = resolved_conversation_store.context(
+                        request.session_id,
+                        relevant_memories,
+                        continuity,
+                    )
 
                 async with active_dialogue_lock:
                     if active_dialogue.cancel_requested:
@@ -391,6 +413,12 @@ def create_app(
                         request.message,
                         result.text,
                     )
+                    continuity_resolution = resolved_emotional_continuity_store.resolve(
+                        request.session_id,
+                        result.performance,
+                        character_profile,
+                        request.message,
+                    )
                     session_summary_available = resolved_conversation_store.summary(request.session_id) is not None
 
                 latency_ms = round((perf_counter() - started_at) * 1000)
@@ -398,7 +426,8 @@ def create_app(
                 response = DialogueResponse(
                     reply=result.text,
                     response_style=request.response_style,
-                    performance=result.performance,
+                    performance=continuity_resolution.performance,
+                    continuity=continuity_resolution.continuity,
                     provider=resolved_provider.name,
                     model=resolved_provider.model,
                     request_id=request_id,
@@ -527,8 +556,13 @@ def create_app(
     ) -> SessionResetResponse:
         async with state_lock:
             cleared_turns = resolved_conversation_store.reset(session_id)
+            cleared_emotional_state = resolved_emotional_continuity_store.reset(session_id)
         logger.info("dialogue_session_reset cleared_turns=%s", cleared_turns)
-        return SessionResetResponse(session_id=session_id, cleared_turns=cleared_turns)
+        return SessionResetResponse(
+            session_id=session_id,
+            cleared_turns=cleared_turns,
+            cleared_emotional_state=cleared_emotional_state,
+        )
 
     @app.get("/api/memories", response_model=PersistentMemoryListResponse)
     async def list_persistent_memories() -> PersistentMemoryListResponse:

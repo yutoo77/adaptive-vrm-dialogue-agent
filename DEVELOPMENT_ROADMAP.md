@@ -12,7 +12,7 @@
 
 ## 現在のRelease目標
 
-`v0.4 Natural Conversation`は完了し、`v0.5 Character Identity`の基盤Sliceも実装した。`月白 しずく v1.0.0`の口調・価値観・避ける表現・Theme・VOICEVOX prosody・演技上限を一つのSchemaから本文、声、演技、UIへ接続し、実OpenAI 4 Scenario 26/26、実VOICEVOX 10/10で確認済みである。次は独自VRMと、Turnをまたぐ感情・視線・Gesture頻度を同Profileへ統合する。
+`v0.4 Natural Conversation`、`v0.5 Character Identity`、`v0.6 Embodied Continuity`を実装した。`月白 しずく v1.0.0`の本文・声・演技・UIを一つのProfileへ接続し、さらにSession内の感情を最大2 Turnだけ減衰して表情・視線・呼吸へ残す。Character Identityは実OpenAI 26/26・実VOICEVOX 10/10、Continuityは初回24/26のFailureを修正後26/26で確認した。次は独自VRMとのVisual統合、または実利用者による会話・聴取評価を独立Sliceとして進める。
 
 ### Public Portfolio Gate
 
@@ -46,7 +46,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - FastAPI、Mock/OpenAI Provider境界
 - BackendだけでSecretを読み、Frontendで応答を再検証
 - Timeout、Request ID、安全なPublic Error
-- `thinking -> response emotion -> idle`の状態遷移
+- `thinking -> response emotion -> emotional baseline | idle`の状態遷移
 
 ### Voice output and Lip Sync
 
@@ -118,19 +118,28 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 実OpenAI 1件 + 実VOICEVOXでWAV準備6,142ms、従来比較9,019ms、先行2,877ms
 - 先行音声は取消不能、最終Plan前の最初の文は中立速度というRiskを明示
 
+### Embodied Continuity
+
+- Session別RAM感情を最大2 Turnだけ減衰して保持し、通常会話やSQLite長期記憶とは分離
+- 利用者が「疲れた」「嬉しい」など現在状態を明示した場合は、古い感情より決定的に優先
+- 同じ低強度Gestureの反復を抑え、感情から6種の微小視線Behaviorと呼吸・揺れScaleを解決
+- 発話後を一律`idle`にせず、非中立時は弱めた表情・視線・呼吸のBaselineへ戻す
+- 実OpenAI固定3 Turnで初回24/26のFailureを検出し、補正後26/26。2 Run累計既知費用$0.00172914
+
 ## 現在のEvidence
 
 | 対象 | 自動確認 | 実動作確認 | 残るGap |
 | --- | --- | --- | --- |
-| Frontend | Type/lint/build、Vitest 79件、Playwright 6件（Profile検証・Mock一往復・Text/Speech Streaming・返答スタイル・生成停止・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
-| Backend | Ruff、Pytest 69件、pip check | Mock/VOICEVOX Health、実OpenAI固定4 Turn・Text/Speech/Character Identity | 多様な実会話、複数回の分散 |
+| Frontend | Type/lint/build、Vitest 83件、Playwright 7件（Profile検証・Mock一往復・Text/Speech Streaming・返答スタイル・生成停止・2 Turn感情・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock二往復 | Bundle分割、動的UIの追加分割 |
+| Backend | Ruff、Pytest 75件、pip check | Mock/VOICEVOX Health、実OpenAI固定4 Turn・Text/Speech/Character Identity/Continuity | 多様な実会話、複数回の分散 |
 | Voice output | API/WAV/Stop/Timing/文分割/順序/失敗Test | 実VOICEVOX 10/10、実Pipeline 1件 | Engine処理の途中Cancel、利用者評価 |
 | Voice input | Permission/無音/Cancel/マイクTest | 実マイク短文1件 | Noiseを含む固定10文 |
 | Performance | Schema/Cue/Reduced Motion Test | 固定10文10/10、実VRM | 皮肉・未知言い換え |
 | Interaction | 4種のSchema/API/UI伝播、不明値拒否、OpenAI Instruction Test | Mock 4種、実OpenAI固定4 Turn 21/21 | 多様な文章品質、利用者評価 |
 | Generation cancel | Active Stream Task、仮Text破棄、停止/保存境界、非保存、UI復帰をAPI/Unit/Browserで確認 | Mock API、実Streamingは100ms後Cancelから0msで終了 | 上流計算/請求の停止保証 |
 | Streaming | Split JSON/Unicode/外側空白、NDJSON、仮Message、文単位Speech Queue、最終CommitをProvider/API/Client/Controller/Browserで確認 | 実OpenAI 42 Delta、先行表示796ms、Speech準備2,877ms前倒し | 複数回分散、可聴Latency、利用者評価 |
-| Character Identity | Profile Schema/Version、Instruction境界、演技意味整合、VOICEVOX prosody、UI反映 | 実OpenAI 4/4・26/26、Profile音声10/10 | 独自VRM、聴取評価、Turn間の余韻 |
+| Character Identity | Profile Schema/Version、Instruction境界、演技意味整合、VOICEVOX prosody、UI反映 | 実OpenAI 4/4・26/26、Profile音声10/10 | 独自VRM、聴取評価 |
+| Embodied Continuity | Session分離、2 Turn減衰、明示変化優先、Gesture反復抑制、視線周期、Reduced MotionをAPI/Unit/Browserで確認 | 実OpenAI初回24/26、修正後26/26 | 日本語限定Marker、皮肉・曖昧表現、主観評価 |
 | Memory | Session/Persistence/Search Test | CRUD UI | 言い換え検索の定量評価 |
 | Security | Local pattern scan、Gitleaks CI、npm/pip audit 0件 | Loopback bind/ignored data、Public RepositoryのSecret scanning確認 | 新しい依存・Data追加時の継続監査 |
 
@@ -157,12 +166,12 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - [x] 外部送信対象をUIとREADMEから確認できる。
 - [x] Mock、Provider failure、VOICEVOX failureの各Fallbackが通る。
 
-### P2 — v0.5 Character Identity and Embodied Consistency
+### P2 — v0.5–v0.6 Character Identity and Embodied Consistency
 
 - [ ] 自作または公開条件を満たす改変Avatarを用意し、和風StageとVisual identityを統一する。
 - [x] Character Profileに口調、価値観、避ける表現、Theme、Voice設定をVersion付きで定義する。
 - [x] ProfileをMock/OpenAI本文、VOICEVOX prosody、演技上限、UIへ接続する。
-- [ ] Turnをまたぐ感情の余韻、視線、頷き、Gestureの頻度とBlendを調整する。
+- [x] Turnをまたぐ感情の余韻、視線、頷き、Gestureの頻度とBlendを調整する。
 - [x] 本文、Voice Style、表情、Gestureが矛盾しない固定Scenarioを評価する。
 - [x] Reduced MotionとModel差異のFallbackを維持する。
 
@@ -170,9 +179,10 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 - 実OpenAI `gpt-5.6-luna` 4/4 Scenario、26/26固定Check、既知費用$0.00120408。
 - 実VOICEVOX 0.25.2でProfile prosodyを適用し、固定10文10/10。
-- ProfileはCode定義1種類。独自VRM、聴取比較、Turn間の感情連続性は完了条件に未到達。
+- Embodied Continuityは実OpenAI初回24/26で「明示的な回復を穏やかに保ちすぎる」Failureを検出し、補正後26/26。2 Run累計既知費用$0.00172914。
+- ProfileはCode定義1種類。独自VRMと聴取比較は完了条件に未到達。
 
-### P3 — v0.6 Trusted Memory
+### P3 — v0.7 Trusted Memory
 
 - 長期記憶は明示追加または会話中の確認承認だけに限定する。
 - 意味検索を導入する場合も、参照した記憶と理由を利用者へ示す。

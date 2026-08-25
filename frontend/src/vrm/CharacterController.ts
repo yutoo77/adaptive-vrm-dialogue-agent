@@ -56,6 +56,8 @@ export class CharacterController {
   private manualExpression: { readonly name: string; readonly weight: number } | null = null;
   private pointerX = 0;
   private pointerY = 0;
+  private ambientGazeX = 0;
+  private ambientGazeY = 0;
   private rootBaseY = 0;
   private lookAtTarget: Object3D<Object3DEventMap> | null = null;
   private readonly euler = new Euler(0, 0, 0, "YXZ");
@@ -100,6 +102,11 @@ export class CharacterController {
   public setPointer(x: number, y: number): void {
     this.pointerX = Math.max(-1, Math.min(1, x));
     this.pointerY = Math.max(-1, Math.min(1, y));
+  }
+
+  public setAmbientGaze(x: number, y: number): void {
+    this.ambientGazeX = Math.max(-0.35, Math.min(0.35, x));
+    this.ambientGazeY = Math.max(-0.25, Math.min(0.25, y));
   }
 
   public setRootBaseY(y: number): void {
@@ -239,8 +246,12 @@ export class CharacterController {
     const preset = getCharacterStatePreset(this.state);
     const emotionalScale = 0.45 + this.performanceIntensity * 0.55;
     const hasLookAt = Boolean(this.vrm?.lookAt);
-    const pointerYaw = hasLookAt ? 0 : this.pointerX * preset.gaze.pointerInfluence * 0.09;
-    const pointerPitch = hasLookAt ? 0 : -this.pointerY * preset.gaze.pointerInfluence * 0.055;
+    const pointerYaw = hasLookAt
+      ? 0
+      : (this.pointerX * preset.gaze.pointerInfluence + this.ambientGazeX) * 0.09;
+    const pointerPitch = hasLookAt
+      ? 0
+      : -(this.pointerY * preset.gaze.pointerInfluence + this.ambientGazeY) * 0.055;
 
     this.applyBoneRotation(
       VRMHumanBoneName.LeftUpperArm,
@@ -308,8 +319,8 @@ export class CharacterController {
     const pointerX = preset.gaze.mode === "center" ? 0 : this.pointerX * preset.gaze.pointerInfluence;
     const pointerY = preset.gaze.mode === "center" ? 0 : this.pointerY * preset.gaze.pointerInfluence;
     this.lookAtTarget.position.set(
-      this.headWorldPosition.x + preset.gaze.offsetX + pointerX * 0.28,
-      this.headWorldPosition.y + preset.gaze.offsetY + pointerY * 0.16,
+      this.headWorldPosition.x + preset.gaze.offsetX + (pointerX + this.ambientGazeX) * 0.28,
+      this.headWorldPosition.y + preset.gaze.offsetY + (pointerY + this.ambientGazeY) * 0.16,
       this.headWorldPosition.z + 1.7,
     );
   }

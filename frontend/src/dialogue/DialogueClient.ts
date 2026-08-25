@@ -299,6 +299,9 @@ function isDialogueHealth(value: unknown): value is DialogueHealth {
     typeof value["session_memory_enabled"] === "boolean" &&
     typeof value["session_memory_max_turns"] === "number" &&
     typeof value["session_summary_enabled"] === "boolean" &&
+    typeof value["emotional_continuity_enabled"] === "boolean" &&
+    Number.isInteger(value["emotional_continuity_max_carry_turns"]) &&
+    isNumberInRange(value["emotional_continuity_max_carry_turns"], 0, 10) &&
     typeof value["persistent_memory_enabled"] === "boolean" &&
     typeof value["persistent_memory_count"] === "number" &&
     isCharacterProfile(value["character"])
@@ -358,6 +361,7 @@ function isDialogueResponse(value: unknown): value is DialogueResponse {
     typeof value["reply"] === "string" &&
     isResponseStyle(value["response_style"]) &&
     isPerformancePlan(value["performance"]) &&
+    isEmotionalContinuity(value["continuity"]) &&
     isProviderName(value["provider"]) &&
     typeof value["model"] === "string" &&
     typeof value["request_id"] === "string" &&
@@ -370,6 +374,23 @@ function isDialogueResponse(value: unknown): value is DialogueResponse {
     typeof value["session_summary_available"] === "boolean" &&
     typeof value["relevant_memory_count"] === "number" &&
     (value["saved_memory"] === null || isPersistentMemoryItem(value["saved_memory"]))
+  );
+}
+
+function isEmotionalContinuity(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["neutral", "happy", "gentle", "curious", "cautious", "confused"].includes(String(value["emotion"])) &&
+    isNumberInRange(value["intensity"], 0, 1) &&
+    Number.isInteger(value["turn_index"]) &&
+    isNumberInRange(value["turn_index"], 1, Number.MAX_SAFE_INTEGER) &&
+    Number.isInteger(value["turns_held"]) &&
+    isNumberInRange(value["turns_held"], 1, Number.MAX_SAFE_INTEGER) &&
+    typeof value["carried_from_previous"] === "boolean" &&
+    ["responsive", "engaged", "soft", "curious", "steady", "searching"].includes(String(value["gaze_behavior"])) &&
+    isNumberInRange(value["motion_scale"], 0.4, 1.2) &&
+    Number.isInteger(value["gesture_budget"]) &&
+    isNumberInRange(value["gesture_budget"], 0, 3)
   );
 }
 
@@ -464,7 +485,8 @@ function isSessionResetResponse(value: unknown): value is SessionResetResponse {
   return (
     isRecord(value) &&
     typeof value["session_id"] === "string" &&
-    typeof value["cleared_turns"] === "number"
+    typeof value["cleared_turns"] === "number" &&
+    typeof value["cleared_emotional_state"] === "boolean"
   );
 }
 
