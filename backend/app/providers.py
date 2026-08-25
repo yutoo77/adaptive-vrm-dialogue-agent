@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from html import escape
 from typing import Protocol
@@ -48,6 +52,19 @@ class ProviderReply:
     performance: PerformancePlan
     upstream_request_id: str | None = None
     usage: ProviderUsage | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderTextDelta:
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderStreamCompleted:
+    reply: ProviderReply
+
+
+ProviderStreamEvent = ProviderTextDelta | ProviderStreamCompleted
 
 
 class ProviderError(RuntimeError):
@@ -127,6 +144,19 @@ class MockProvider:
             performance=select_mock_performance(message, styled_reply),
         )
 
+    async def stream_reply(
+        self,
+        message: str,
+        context: DialogueContext,
+        response_style: ResponseStyle,
+        request_id: str,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        reply = await self.generate_reply(message, context, response_style, request_id)
+        for chunk in _text_chunks(reply.text):
+            await asyncio.sleep(0.015)
+            yield ProviderTextDelta(chunk)
+        yield ProviderStreamCompleted(reply)
+
 
 class UnavailableProvider:
     name: ProviderName = "openai"
@@ -145,6 +175,16 @@ class UnavailableProvider:
     ) -> ProviderReply:
         del message, context, response_style, request_id
         raise ProviderError(503, "provider_not_configured", self.configuration_message)
+
+    async def stream_reply(
+        self,
+        message: str,
+        context: DialogueContext,
+        response_style: ResponseStyle,
+        request_id: str,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        reply = await self.generate_reply(message, context, response_style, request_id)
+        yield ProviderStreamCompleted(reply)
 
 
 class OpenAIProvider:
@@ -170,6 +210,67 @@ class OpenAIProvider:
         response_style: ResponseStyle,
         request_id: str,
     ) -> ProviderReply:
+        input_items = self._input_items(message, context)
+        try:
+            response = await self._client.responses.parse(
+                model=self.model,
+                instructions=f"{SYSTEM_INSTRUCTIONS}\n\n{response_style_instruction(response_style)}",
+                input=input_items,
+                text_format=StructuredDialogueOutput,
+                max_output_tokens=self._max_output_tokens,
+                reasoning={"effort": "none"},
+                safety_identifier="local-demo-user",
+                store=False,
+                extra_headers={"X-Client-Request-Id": request_id},
+            )
+        except (AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError) as error:
+            raise _translate_openai_error(error) from error
+
+        return _provider_reply_from_response(response)
+
+    async def stream_reply(
+        self,
+        message: str,
+        context: DialogueContext,
+        response_style: ResponseStyle,
+        request_id: str,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        decoder = _StructuredReplyDeltaDecoder()
+        visible_text = ""
+        try:
+            async with self._client.responses.stream(
+                model=self.model,
+                instructions=f"{SYSTEM_INSTRUCTIONS}\n\n{response_style_instruction(response_style)}",
+                input=self._input_items(message, context),
+                text_format=StructuredDialogueOutput,
+                max_output_tokens=self._max_output_tokens,
+                reasoning={"effort": "none"},
+                safety_identifier="local-demo-user",
+                store=False,
+                extra_headers={"X-Client-Request-Id": request_id},
+            ) as stream:
+                async for event in stream:
+                    if event.type != "response.output_text.delta":
+                        continue
+                    delta = decoder.feed(event.delta)
+                    if delta:
+                        visible_text += delta
+                        yield ProviderTextDelta(delta)
+                response = await stream.get_final_response()
+        except (AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError) as error:
+            raise _translate_openai_error(error) from error
+
+        reply = _provider_reply_from_response(response)
+        if reply.text.startswith(visible_text):
+            remaining = reply.text[len(visible_text) :]
+            if remaining:
+                yield ProviderTextDelta(remaining)
+        elif not visible_text:
+            yield ProviderTextDelta(reply.text)
+        yield ProviderStreamCompleted(reply)
+
+    @staticmethod
+    def _input_items(message: str, context: DialogueContext) -> list[dict[str, str]]:
         input_items: list[dict[str, str]] = []
         context_sections: list[str] = []
         if context.session_summary:
@@ -190,52 +291,7 @@ class OpenAIProvider:
             {"role": item.role, "content": item.content} for item in context.recent_messages
         )
         input_items.append({"role": "user", "content": message})
-        try:
-            response = await self._client.responses.parse(
-                model=self.model,
-                instructions=f"{SYSTEM_INSTRUCTIONS}\n\n{response_style_instruction(response_style)}",
-                input=input_items,
-                text_format=StructuredDialogueOutput,
-                max_output_tokens=self._max_output_tokens,
-                reasoning={"effort": "none"},
-                safety_identifier="local-demo-user",
-                store=False,
-                extra_headers={"X-Client-Request-Id": request_id},
-            )
-        except AuthenticationError as error:
-            raise ProviderError(503, "authentication_failed", "OpenAI APIキーを確認してください。") from error
-        except RateLimitError as error:
-            raise ProviderError(
-                429,
-                "rate_limited",
-                "APIの利用上限に達しました。少し待って再試行してください。",
-            ) from error
-        except APITimeoutError as error:
-            raise ProviderError(
-                504,
-                "provider_timeout",
-                "AIの応答が時間内に返りませんでした。再試行してください。",
-            ) from error
-        except APIConnectionError as error:
-            raise ProviderError(
-                503,
-                "provider_unreachable",
-                "OpenAI APIへ接続できませんでした。通信状態を確認してください。",
-            ) from error
-        except APIStatusError as error:
-            raise ProviderError(502, "provider_error", "OpenAI APIでエラーが発生しました。") from error
-
-        output = response.output_parsed
-        if output is None or not output.reply.strip():
-            raise ProviderError(502, "empty_response", "AIから空の応答が返りました。もう一度試してください。")
-
-        upstream_request_id = getattr(response, "_request_id", None)
-        return ProviderReply(
-            text=output.reply.strip(),
-            performance=output.performance,
-            upstream_request_id=upstream_request_id,
-            usage=_read_provider_usage(getattr(response, "usage", None)),
-        )
+        return input_items
 
 
 def build_provider(settings: Settings) -> DialogueProvider:
@@ -244,6 +300,123 @@ def build_provider(settings: Settings) -> DialogueProvider:
     if not settings.openai_api_key:
         return UnavailableProvider(settings.openai_model)
     return OpenAIProvider(settings)
+
+
+async def stream_provider_reply(
+    provider: DialogueProvider,
+    message: str,
+    context: DialogueContext,
+    response_style: ResponseStyle,
+    request_id: str,
+) -> AsyncIterator[ProviderStreamEvent]:
+    stream_reply = getattr(provider, "stream_reply", None)
+    if callable(stream_reply):
+        async for event in stream_reply(message, context, response_style, request_id):
+            yield event
+        return
+
+    reply = await provider.generate_reply(message, context, response_style, request_id)
+    yield ProviderTextDelta(reply.text)
+    yield ProviderStreamCompleted(reply)
+
+
+def _provider_reply_from_response(response: object) -> ProviderReply:
+    output = getattr(response, "output_parsed", None)
+    if not isinstance(output, StructuredDialogueOutput) or not output.reply.strip():
+        raise ProviderError(502, "empty_response", "AIから空の応答が返りました。もう一度試してください。")
+    return ProviderReply(
+        text=output.reply.strip(),
+        performance=output.performance,
+        upstream_request_id=getattr(response, "_request_id", None),
+        usage=_read_provider_usage(getattr(response, "usage", None)),
+    )
+
+
+def _translate_openai_error(error: Exception) -> ProviderError:
+    if isinstance(error, AuthenticationError):
+        return ProviderError(503, "authentication_failed", "OpenAI APIキーを確認してください。")
+    if isinstance(error, RateLimitError):
+        return ProviderError(429, "rate_limited", "APIの利用上限に達しました。少し待って再試行してください。")
+    if isinstance(error, APITimeoutError):
+        return ProviderError(504, "provider_timeout", "AIの応答が時間内に返りませんでした。再試行してください。")
+    if isinstance(error, APIConnectionError):
+        return ProviderError(
+            503,
+            "provider_unreachable",
+            "OpenAI APIへ接続できませんでした。通信状態を確認してください。",
+        )
+    return ProviderError(502, "provider_error", "OpenAI APIでエラーが発生しました。")
+
+
+class _StructuredReplyDeltaDecoder:
+    """Expose only the decoded `reply` value from a partial structured JSON stream."""
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._decoded = ""
+
+    def feed(self, raw_delta: str) -> str:
+        self._buffer += raw_delta
+        decoded = _decode_reply_prefix(self._buffer)
+        if decoded is None or not decoded.startswith(self._decoded):
+            return ""
+        delta = decoded[len(self._decoded) :]
+        self._decoded = decoded
+        return delta
+
+
+def _decode_reply_prefix(value: str) -> str | None:
+    match = re.search(r'"reply"\s*:\s*"', value)
+    if match is None:
+        return None
+
+    start = match.end()
+    index = start
+    safe_end = start
+    while index < len(value):
+        character = value[index]
+        if character == '"':
+            safe_end = index
+            break
+        if character != "\\":
+            index += 1
+            safe_end = index
+            continue
+        if index + 1 >= len(value):
+            break
+        escape_code = value[index + 1]
+        if escape_code == "u":
+            unicode_escape = value[index + 2 : index + 6]
+            if index + 6 > len(value) or not all(char in "0123456789abcdefABCDEF" for char in unicode_escape):
+                break
+            codepoint = int(unicode_escape, 16)
+            if 0xD800 <= codepoint <= 0xDBFF:
+                if index + 12 > len(value) or value[index + 6 : index + 8] != "\\u":
+                    break
+                low = value[index + 8 : index + 12]
+                if not all(char in "0123456789abcdefABCDEF" for char in low):
+                    break
+                low_codepoint = int(low, 16)
+                if not 0xDC00 <= low_codepoint <= 0xDFFF:
+                    break
+                index += 12
+            else:
+                index += 6
+        elif escape_code in '"\\/bfnrt':
+            index += 2
+        else:
+            break
+        safe_end = index
+
+    try:
+        decoded = json.loads(f'"{value[start:safe_end]}"')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return decoded if isinstance(decoded, str) else None
+
+
+def _text_chunks(text: str, size: int = 12) -> tuple[str, ...]:
+    return tuple(text[index : index + size] for index in range(0, len(text), size))
 
 
 def _read_provider_usage(value: object | None) -> ProviderUsage | None:

@@ -61,6 +61,17 @@ test("explicit response style reaches the free Mock provider", async ({ page }) 
   const style = page.getByRole("combobox", { name: "返答の詳しさ" });
   await expect(style).toHaveValue("balanced");
   await style.selectOption("detailed");
+  await page.evaluate(() => {
+    const state = window as unknown as { streamingTransitionSeen: boolean };
+    state.streamingTransitionSeen = false;
+    const log = document.querySelector("#dialogue-log");
+    if (!log) return;
+    new MutationObserver((records) => {
+      if (records.some((record) => record.type === "attributes" && record.oldValue?.includes("is-streaming"))) {
+        state.streamingTransitionSeen = true;
+      }
+    }).observe(log, { subtree: true, attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+  });
 
   await page.getByRole("textbox", { name: "メッセージ" }).fill("何ができる？");
   await page.getByRole("button", { name: "送信" }).click();
@@ -68,6 +79,13 @@ test("explicit response style reaches the free Mock provider", async ({ page }) 
   await expect(page.locator("#dialogue-log .is-assistant p")).toContainText(
     "要点を分けて順番に詳しく説明するよ",
   );
+  await expect(page.locator("#dialogue-log .is-assistant.is-streaming")).toHaveCount(0);
+  await expect(page.locator("#dialogue-log .is-assistant")).not.toHaveAttribute("aria-hidden", "true");
+  expect(await page.evaluate(() =>
+    (window as unknown as { streamingTransitionSeen: boolean }).streamingTransitionSeen,
+  )).toBe(true);
+  await expect(page.locator("#latency-first-text")).not.toHaveText("—");
+  await expect(page.locator("#latency-text-complete")).not.toHaveText("—");
   await expect(style).toBeEnabled();
 });
 
@@ -82,7 +100,7 @@ test("user can cancel an active response and return to idle", async ({ page }) =
       body: JSON.stringify({ session_id: sessionId, cancelled: true }),
     });
   });
-  await page.route("**/api/dialogue", async (route) => {
+  await page.route("**/api/dialogue/stream", async (route) => {
     if (route.request().method() !== "POST") {
       await route.continue();
       return;

@@ -51,6 +51,7 @@ export class SpeechController {
   private latestTiming: SpeechTiming | null = null;
   private latestText = "";
   private latestPerformance: PerformancePlan | null = null;
+  private latestOnStarted: (() => void) | null = null;
   private disposed = false;
 
   public constructor(
@@ -89,12 +90,13 @@ export class SpeechController {
     }
   }
 
-  public speak(text: string, performancePlan?: PerformancePlan): void {
+  public speak(text: string, performancePlan?: PerformancePlan, onStarted?: () => void): void {
     this.cancelActive(false);
     this.latestAudio = null;
     this.latestTiming = null;
     this.latestText = text;
     this.latestPerformance = performancePlan ?? null;
+    this.latestOnStarted = onStarted ?? null;
     const operationId = ++this.operationId;
     const controller = new AbortController();
     const startedAt = performance.now();
@@ -122,6 +124,7 @@ export class SpeechController {
     this.latestTiming = null;
     this.latestText = "";
     this.latestPerformance = null;
+    this.latestOnStarted = null;
   }
 
   private async generateAndPlay(
@@ -166,6 +169,11 @@ export class SpeechController {
       if (!this.isCurrent(operationId) || this.audio !== audio) {
         audio.pause();
         return;
+      }
+      if (automatic) {
+        const onStarted = this.latestOnStarted;
+        this.latestOnStarted = null;
+        onStarted?.();
       }
       const lipSyncLabel = this.latestTiming?.visemes.length ? "（VOICEVOX母音同期）" : "";
       this.setStatus("playing", `音声を再生しています${lipSyncLabel}。`, "stop");
@@ -216,6 +224,7 @@ export class SpeechController {
     this.operationId += 1;
     this.requestController?.abort();
     this.requestController = null;
+    this.latestOnStarted = null;
     this.audio?.pause();
     if (this.audio) this.audio.currentTime = 0;
     this.cleanupAudio();

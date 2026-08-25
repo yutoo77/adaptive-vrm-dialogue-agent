@@ -258,8 +258,9 @@ export function createAppMarkup(): string {
                     <span>処理時間</span>
                     <dl>
                       <div><dt>認識</dt><dd id="latency-transcription">—</dd></div>
-                      <div><dt>応答</dt><dd id="latency-dialogue">—</dd></div>
-                      <div><dt>音声</dt><dd id="latency-speech">—</dd></div>
+                      <div><dt>初文</dt><dd id="latency-first-text">—</dd></div>
+                      <div><dt>本文</dt><dd id="latency-text-complete">—</dd></div>
+                      <div><dt>発話</dt><dd id="latency-speech-start">—</dd></div>
                     </dl>
                   </div>
                   <div id="developer-content" class="developer-content"></div>

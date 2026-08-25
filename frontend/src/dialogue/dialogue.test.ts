@@ -66,6 +66,8 @@ const RESPONSE: DialogueResponse = {
   model: "mock-v1",
   request_id: "request-1",
   latency_ms: 2,
+  first_text_ms: 1,
+  text_complete_ms: 2,
   session_id: "session-test-alpha",
   memory_turns: 1,
   memory_max_turns: 10,
@@ -81,6 +83,9 @@ function createCallbacks() {
   const errors: string[] = [];
   const connections: Array<DialogueHealth | null> = [];
   const latencies: number[] = [];
+  const partialAssistantMessages: string[] = [];
+  const completedAssistantMessages: string[] = [];
+  const responseTimings: Array<[string, number]> = [];
   const memories: Array<[number, number]> = [];
   const persistentMemories: Array<readonly PersistentMemoryItem[]> = [];
   const memoryNotices: string[] = [];
@@ -88,15 +93,25 @@ function createCallbacks() {
   const performances: PerformancePlan[] = [];
   let conversationResets = 0;
   let cancellations = 0;
+  let partialDiscards = 0;
   const callbacks: DialogueCallbacks = {
     onConnectionChange: (health) => connections.push(health),
     onMessage: (role, text) => messages.push([role, text]),
+    onPartialAssistantMessage: (text) => partialAssistantMessages.push(text),
+    onCompleteAssistantMessage: (text) => {
+      completedAssistantMessages.push(text);
+      messages.push(["assistant", text]);
+    },
+    onDiscardPartialAssistantMessage: () => {
+      partialDiscards += 1;
+    },
     onBusyChange: (value) => busy.push(value),
     onCharacterState: (state) => states.push(state),
     onPerformancePlan: (performance) => performances.push(performance),
     onError: (message) => errors.push(message),
     onClearError: vi.fn(),
     onLatency: (latencyMs) => latencies.push(latencyMs),
+    onResponseTiming: (stage, latencyMs) => responseTimings.push([stage, latencyMs]),
     onMemoryChange: (turns, maxTurns) => memories.push([turns, maxTurns]),
     onPersistentMemoriesChange: (items) => persistentMemories.push(items),
     onMemoryNotice: (message) => memoryNotices.push(message),
@@ -116,6 +131,9 @@ function createCallbacks() {
     errors,
     connections,
     latencies,
+    partialAssistantMessages,
+    completedAssistantMessages,
+    responseTimings,
     memories,
     persistentMemories,
     memoryNotices,
@@ -126,6 +144,9 @@ function createCallbacks() {
     },
     get cancellations() {
       return cancellations;
+    },
+    get partialDiscards() {
+      return partialDiscards;
     },
   };
 }
@@ -141,6 +162,56 @@ it("validates and sends the latest text message to the backend", async () => {
   const client = new DialogueClient(fetchMock, "/api", 1000);
 
   await expect(client.sendMessage("テスト", "session-test-alpha", "detailed")).resolves.toEqual(RESPONSE);
+});
+
+it("parses chunked NDJSON and exposes only validated text deltas", async () => {
+  const encoder = new TextEncoder();
+  const payload = [
+    { type: "start", request_id: "request-1", provider: "mock", model: "mock-v1" },
+    { type: "text_delta", delta: "こん", elapsed_ms: 1 },
+    { type: "text_delta", delta: "にちは。", elapsed_ms: 2 },
+    { type: "complete", response: RESPONSE },
+  ].map((event) => `${JSON.stringify(event)}\n`).join("");
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(payload.slice(0, 41)));
+      controller.enqueue(encoder.encode(payload.slice(41)));
+      controller.close();
+    },
+  });
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    expect(String(input)).toBe("/api/dialogue/stream");
+    return new Response(body, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
+  });
+  const deltas: string[] = [];
+  const client = new DialogueClient(fetchMock, "/api", 1000);
+
+  await expect(
+    client.streamMessage("テスト", "session-test-alpha", "balanced", (delta) => deltas.push(delta)),
+  ).resolves.toEqual(RESPONSE);
+  expect(deltas).toHaveLength(2);
+  expect(deltas.join("")).toBe("こんにちは。");
+});
+
+it("turns a typed stream error event into a safe actionable error", async () => {
+  const fetchMock = vi.fn(async () =>
+    new Response(
+      `${JSON.stringify({
+        type: "error",
+        error: { code: "rate_limited", message: "少し待ってください。", request_id: "stream-req-1" },
+      })}\n`,
+      { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+    ),
+  );
+  const client = new DialogueClient(fetchMock, "/api", 1000);
+
+  await expect(
+    client.streamMessage("テスト", "session-test-alpha", "balanced", vi.fn()),
+  ).rejects.toMatchObject({
+    message: "少し待ってください。",
+    code: "rate_limited",
+    requestId: "stream-req-1",
+  });
 });
 
 it("resets one backend conversation session", async () => {
@@ -232,6 +303,34 @@ it("turns an unstructured backend failure into actionable recovery guidance", as
 });
 
 describe("DialogueController", () => {
+  it("renders streamed text incrementally before final validation", async () => {
+    const gateway: DialogueGateway = {
+      ...MEMORY_GATEWAY,
+      getHealth: async () => READY_HEALTH,
+      sendMessage: async () => RESPONSE,
+      streamMessage: async (_message, _sessionId, _responseStyle, onTextDelta) => {
+        onTextDelta("こん");
+        await Promise.resolve();
+        onTextDelta("にちは。");
+        return RESPONSE;
+      },
+      resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
+    };
+    const observed = createCallbacks();
+    const controller = new DialogueController(gateway, observed.callbacks);
+
+    await controller.initialize();
+    expect(controller.send("テスト")).toBe(true);
+    await vi.waitFor(() => expect(observed.busy.at(-1)).toBe(false));
+
+    expect(observed.partialAssistantMessages).toHaveLength(2);
+    expect(observed.partialAssistantMessages.at(-1)).toBe("こんにちは。");
+    expect(observed.completedAssistantMessages).toHaveLength(1);
+    expect(observed.completedAssistantMessages[0]).toBe("こんにちは。");
+    expect(observed.responseTimings.map(([stage]) => stage)).toEqual(["first-text", "text-complete"]);
+    controller.dispose();
+  });
+
   it("cancels an active response without adding an assistant message or error", async () => {
     const cancelActiveDialogue = vi.fn(async (sessionId: string) => ({
       session_id: sessionId,
@@ -277,16 +376,13 @@ describe("DialogueController", () => {
   });
 
   it("does not claim cancellation when the backend has no active generation", async () => {
+    let finishResponse = (): void => undefined;
     const gateway: DialogueGateway = {
       ...MEMORY_GATEWAY,
       getHealth: async () => READY_HEALTH,
-      sendMessage: async (_message, _sessionId, _responseStyle, signal) =>
-        new Promise<DialogueResponse>((_resolve, reject) => {
-          signal?.addEventListener(
-            "abort",
-            () => reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
-            { once: true },
-          );
+      sendMessage: async () =>
+        new Promise<DialogueResponse>((resolve) => {
+          finishResponse = () => resolve(RESPONSE);
         }),
       cancelActiveDialogue: async (sessionId) => ({ session_id: sessionId, cancelled: false }),
       resetSession: async (sessionId) => ({ session_id: sessionId, cleared_turns: 0 }),
@@ -298,11 +394,13 @@ describe("DialogueController", () => {
     expect(controller.send("停止対象がない場合")).toBe(true);
     await vi.waitFor(() => expect(observed.busy).toEqual([true]));
     expect(controller.cancelResponse()).toBe(true);
+    finishResponse();
     await vi.waitFor(() => expect(observed.busy).toEqual([true, false]));
 
     expect(observed.cancellations).toBe(0);
-    expect(observed.errors.at(-1)).toContain("停止対象を確認できませんでした");
-    expect(observed.states.at(-1)).toBe("idle");
+    expect(observed.errors).toEqual([]);
+    expect(observed.memoryNotices.at(-1)).toContain("既に完了していたため");
+    expect(observed.messages).toContainEqual(["assistant", "こんにちは。"]);
     controller.dispose();
   });
 
@@ -402,7 +500,9 @@ describe("DialogueController", () => {
 
     await controller.initialize();
     expect(controller.send("テスト")).toBe(true);
-    await vi.waitFor(() => expect(speech.speak).toHaveBeenCalledWith("こんにちは。", RESPONSE.performance));
+    await vi.waitFor(() =>
+      expect(speech.speak).toHaveBeenCalledWith("こんにちは。", RESPONSE.performance, expect.any(Function)),
+    );
 
     expect(observed.messages).toContainEqual(["assistant", "こんにちは。"]);
     expect(observed.states).toEqual(["thinking", "explaining"]);

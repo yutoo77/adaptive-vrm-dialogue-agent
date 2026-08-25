@@ -54,6 +54,8 @@ export interface DialogueResponse {
   readonly model: string;
   readonly request_id: string;
   readonly latency_ms: number;
+  readonly first_text_ms: number;
+  readonly text_complete_ms: number;
   readonly session_id: string;
   readonly memory_turns: number;
   readonly memory_max_turns: number;
@@ -61,6 +63,29 @@ export interface DialogueResponse {
   readonly relevant_memory_count: number;
   readonly saved_memory: PersistentMemoryItem | null;
 }
+
+export interface DialogueStreamStartEvent {
+  readonly type: "start";
+  readonly request_id: string;
+  readonly provider: DialogueProviderName;
+  readonly model: string;
+}
+
+export interface DialogueStreamTextDeltaEvent {
+  readonly type: "text_delta";
+  readonly delta: string;
+  readonly elapsed_ms: number;
+}
+
+export interface DialogueStreamCompleteEvent {
+  readonly type: "complete";
+  readonly response: DialogueResponse;
+}
+
+export type DialogueStreamEvent =
+  | DialogueStreamStartEvent
+  | DialogueStreamTextDeltaEvent
+  | DialogueStreamCompleteEvent;
 
 export interface SessionResetResponse {
   readonly session_id: string;

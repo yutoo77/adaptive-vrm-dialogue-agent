@@ -18,7 +18,7 @@ import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
 import { createAppMarkup, performanceEmotionLabel } from "./createAppMarkup";
 import { renderDeveloperPanel } from "./renderDeveloperPanel";
 
-export type LatencyStage = "transcription" | "dialogue" | "speech";
+export type LatencyStage = "transcription" | "first-text" | "text-complete" | "speech-start";
 
 export interface UIActions {
   readonly loadFile: (file: File) => Promise<void>;
@@ -74,8 +74,9 @@ export class UIController {
   private reducedMotionMode: ReducedMotionMode = "system";
   private readonly latencyMeasurements: Record<LatencyStage, number | null> = {
     transcription: null,
-    dialogue: null,
-    speech: null,
+    "first-text": null,
+    "text-complete": null,
+    "speech-start": null,
   };
 
   public constructor(private readonly root: HTMLElement) {
@@ -306,6 +307,45 @@ export class UIController {
     log.scrollTop = log.scrollHeight;
   }
 
+  public updateStreamingAssistantMessage(text: string): void {
+    const log = this.required("#dialogue-log");
+    log.querySelector(".dialogue-empty")?.remove();
+    let message = log.querySelector<HTMLElement>('[data-streaming-assistant="true"]');
+    if (!message) {
+      message = document.createElement("article");
+      message.className = "dialogue-message is-assistant is-streaming";
+      message.dataset["streamingAssistant"] = "true";
+      message.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.textContent = "キャラクター";
+      const body = document.createElement("p");
+      message.append(label, body);
+      log.append(message);
+      const messages = log.querySelectorAll(".dialogue-message");
+      if (messages.length > 20) messages[0]?.remove();
+    }
+    const body = message.querySelector("p");
+    if (body) body.textContent = text;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  public completeStreamingAssistantMessage(text: string): void {
+    const message = this.root.querySelector<HTMLElement>('[data-streaming-assistant="true"]');
+    if (!message) {
+      this.appendDialogueMessage("assistant", text);
+      return;
+    }
+    const body = message.querySelector("p");
+    if (body) body.textContent = text;
+    message.classList.remove("is-streaming");
+    message.removeAttribute("aria-hidden");
+    delete message.dataset["streamingAssistant"];
+  }
+
+  public discardStreamingAssistantMessage(): void {
+    this.root.querySelector<HTMLElement>('[data-streaming-assistant="true"]')?.remove();
+  }
+
   public updateDialogueMemory(turns: number, maxTurns: number): void {
     this.dialogueMemoryTurns = Math.max(0, turns);
     this.dialogueMemoryMaxTurns = Math.max(1, maxTurns);
@@ -352,9 +392,10 @@ export class UIController {
     this.required<HTMLTextAreaElement>("#dialogue-input").value = "";
     this.clearDialogueError();
     this.latencyMeasurements.transcription = null;
-    this.latencyMeasurements.dialogue = null;
-    this.latencyMeasurements.speech = null;
-    (["transcription", "dialogue", "speech"] as const).forEach((stage) => {
+    this.latencyMeasurements["first-text"] = null;
+    this.latencyMeasurements["text-complete"] = null;
+    this.latencyMeasurements["speech-start"] = null;
+    (["transcription", "first-text", "text-complete", "speech-start"] as const).forEach((stage) => {
       this.required(`#latency-${stage}`).textContent = "—";
     });
     this.updateDialogueMemory(0, this.dialogueMemoryMaxTurns);
@@ -364,6 +405,12 @@ export class UIController {
 
   public updateDialogueBusy(busy: boolean): void {
     this.dialogueBusy = busy;
+    if (busy) {
+      (["first-text", "text-complete", "speech-start"] as const).forEach((stage) => {
+        this.latencyMeasurements[stage] = null;
+        this.required(`#latency-${stage}`).textContent = "—";
+      });
+    }
     const log = this.required("#dialogue-log");
     const submit = this.required<HTMLButtonElement>("#dialogue-submit");
     log.setAttribute("aria-busy", String(busy));
@@ -790,7 +837,8 @@ export class UIController {
 
   private formatLatencySummary(): string {
     const values = this.latencyMeasurements;
-    return `認識 ${formatLatency(values.transcription)} / 応答 ${formatLatency(values.dialogue)} / 音声 ${formatLatency(values.speech)}`;
+    return `認識 ${formatLatency(values.transcription)} / 初文 ${formatLatency(values["first-text"])} / `
+      + `本文 ${formatLatency(values["text-complete"])} / 発話 ${formatLatency(values["speech-start"])}`;
   }
 
   private renderDialogueMemoryStatus(): void {

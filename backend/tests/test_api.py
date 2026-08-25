@@ -1,4 +1,6 @@
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
@@ -11,7 +13,13 @@ from app.interaction import ResponseStyle
 from app.main import create_app
 from app.performance import PerformancePlan
 from app.persistent_memory import PersistentMemoryStore
-from app.providers import ProviderError, ProviderReply
+from app.providers import (
+    ProviderError,
+    ProviderReply,
+    ProviderStreamCompleted,
+    ProviderStreamEvent,
+    ProviderTextDelta,
+)
 from app.speech import (
     SpeechHealth,
     SpeechProviderError,
@@ -88,6 +96,32 @@ def test_mock_dialogue_returns_a_traceable_response() -> None:
     assert payload["saved_memory"] is None
 
 
+def test_mock_dialogue_stream_exposes_deltas_then_commits_one_validated_response() -> None:
+    conversation_store = ConversationMemoryStore()
+    app = create_app(
+        settings=Settings(),
+        conversation_store=conversation_store,
+        persistent_memory_store=PersistentMemoryStore.in_memory(),
+    )
+
+    response = TestClient(app).post("/api/dialogue/stream", json=dialogue_payload("こんにちは"))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert response.headers["cache-control"] == "no-store"
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert events[0]["type"] == "start"
+    deltas = [event["delta"] for event in events if event["type"] == "text_delta"]
+    assert len(deltas) >= 2
+    completed = events[-1]
+    assert completed["type"] == "complete"
+    payload = completed["response"]
+    assert "".join(deltas) == payload["reply"]
+    assert payload["first_text_ms"] <= payload["text_complete_ms"] <= payload["latency_ms"]
+    assert payload["memory_turns"] == 1
+    assert len(conversation_store.history(SESSION_A)) == 2
+
+
 def test_mock_capability_reply_matches_current_voice_features() -> None:
     response = build_client().post("/api/dialogue", json=dialogue_payload("何ができる？"))
 
@@ -149,6 +183,55 @@ class BlockingProvider:
             raise
 
 
+class PartialBlockingStreamProvider:
+    name = "mock"
+    model = "partial-blocking-mock"
+    ready = True
+    configuration_message = None
+
+    def __init__(self) -> None:
+        self.started = Event()
+        self.cancelled = Event()
+
+    async def generate_reply(
+        self,
+        message: str,
+        context: DialogueContext,
+        response_style: ResponseStyle,
+        request_id: str,
+    ) -> ProviderReply:
+        del message, context, response_style, request_id
+        raise AssertionError("The streaming endpoint must use stream_reply.")
+
+    async def stream_reply(
+        self,
+        message: str,
+        context: DialogueContext,
+        response_style: ResponseStyle,
+        request_id: str,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        del message, context, response_style, request_id
+        yield ProviderTextDelta("保存前の途中Text")
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        yield ProviderStreamCompleted(
+            ProviderReply(
+                text="到達しない返答",
+                performance=PerformancePlan(
+                    emotion="neutral",
+                    intensity=0.3,
+                    gesture="none",
+                    voice_style="neutral",
+                    cues=[],
+                ),
+            )
+        )
+
+
 def test_active_dialogue_can_be_cancelled_without_saving_conversation_or_memory() -> None:
     provider = BlockingProvider()
     conversation_store = ConversationMemoryStore()
@@ -186,6 +269,37 @@ def test_active_dialogue_can_be_cancelled_without_saving_conversation_or_memory(
     assert conversation_store.history(SESSION_A) == ()
     assert memory_store.count() == 0
     assert second_cancellation.json() == {"session_id": SESSION_A, "cancelled": False}
+
+
+def test_streamed_partial_text_is_cancelled_without_committing_memory() -> None:
+    provider = PartialBlockingStreamProvider()
+    conversation_store = ConversationMemoryStore()
+    memory_store = PersistentMemoryStore.in_memory()
+    app = create_app(
+        settings=Settings(),
+        provider=provider,
+        conversation_store=conversation_store,
+        persistent_memory_store=memory_store,
+    )
+
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as executor:
+        pending_response = executor.submit(
+            client.post,
+            "/api/dialogue/stream",
+            json=dialogue_payload("覚えておいて：保存しない"),
+        )
+        assert provider.started.wait(timeout=2)
+        cancellation = client.delete(f"/api/dialogue/sessions/{SESSION_A}/active")
+        stream_response = pending_response.result(timeout=5)
+
+    events = [json.loads(line) for line in stream_response.text.splitlines()]
+    assert cancellation.json() == {"session_id": SESSION_A, "cancelled": True}
+    assert any(event["type"] == "text_delta" for event in events)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["error"]["code"] == "dialogue_cancelled"
+    assert provider.cancelled.is_set()
+    assert conversation_store.history(SESSION_A) == ()
+    assert memory_store.count() == 0
 
 
 def test_mock_remembers_recent_context_within_one_session() -> None:
@@ -376,6 +490,25 @@ def test_provider_errors_use_a_safe_public_payload() -> None:
     assert len(detail["request_id"]) == 32
     failed_memory = TestClient(app).post("/api/dialogue", json=dialogue_payload("覚えておいて：保存しない"))
     assert failed_memory.status_code == 504
+    assert memory_store.count() == 0
+
+
+def test_streaming_provider_error_uses_a_typed_safe_event_without_saving() -> None:
+    memory_store = PersistentMemoryStore.in_memory()
+    app = create_app(settings=Settings(), provider=FailingProvider(), persistent_memory_store=memory_store)
+
+    response = TestClient(app).post(
+        "/api/dialogue/stream",
+        json=dialogue_payload("覚えておいて：保存しない"),
+    )
+
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert response.status_code == 200
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "error"
+    assert events[-1]["error"]["code"] == "provider_timeout"
+    assert events[-1]["error"]["message"] == "時間内に応答できませんでした。"
+    assert len(events[-1]["error"]["request_id"]) == 32
     assert memory_store.count() == 0
 
 

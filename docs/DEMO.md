@@ -23,8 +23,8 @@ Send `何ができるの？`.
 Show the flow:
 
 1. the Avatar enters `thinking`;
-2. the Mock Provider returns deterministic text and a bounded performance plan;
-3. the UI displays the selected emotion, intensity, gesture, and cue count;
+2. reply text appears incrementally through the typed NDJSON stream;
+3. the final schema validates before the UI displays the selected emotion, intensity, gesture, and cue count;
 4. VOICEVOX plays the response;
 5. the mouth follows the five-vowel timeline and the Avatar returns to `idle`.
 
@@ -48,7 +48,7 @@ Do not store sensitive or real personal information in a public demo.
 
 ### 5. Evidence and limits — 20 seconds
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no streaming response, no semantic vector search, only one fixed four-turn real-OpenAI evaluation rather than broad or user-rated conversation quality, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
+Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, only one fixed real-OpenAI streaming run rather than broad or user-rated conversation quality, speech generation still waits for final text, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
 
 ## One-minute route
 

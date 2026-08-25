@@ -1,6 +1,6 @@
 # Architecture
 
-更新日: 2026-08-25 / 対象Version: v0.4 + Voice + Local Memory + Adaptive Performance + Adaptive Interaction + Response Cancellation
+更新日: 2026-08-25 / 対象Version: v0.4 + Voice + Local Memory + Adaptive Performance + Adaptive Interaction + Cancellation + Streaming
 
 ## 現在の構成
 
@@ -9,7 +9,7 @@ flowchart LR
     User["利用者"] --> UI["UI modules\nMarkup・入力・状態・診断表示"]
     UI --> Style["ResponseStyle\n短く・自然・詳しく・やさしく"]
     Style --> DC["DialogueController\n送信・停止とAvatar状態を調整"]
-    DC --> Client["DialogueClient\nHTTP・Timeout・停止・応答検証"]
+    DC --> Client["DialogueClient\nNDJSON・Timeout・停止・応答検証"]
     Client --> Proxy["Vite /api proxy"]
     Proxy --> API["FastAPI\n入力検証・Request ID・Logging"]
     API <--> Active["ActiveDialogue registry\nSession別Task・停止/保存境界"]
@@ -56,22 +56,23 @@ flowchart LR
 
 1. `UIController`がTextと明示選択した4種類の返答スタイルを受け取り、空文字・1000文字超・処理中の再送を防ぐ。
 2. `DialogueController`が利用者発話を表示し、Avatarを`thinking`へ変える。
-3. `DialogueClient`が画面内で生成した`session_id`、本文、`response_style`を`POST /api/dialogue`へ送り、35秒でClient Timeoutにする。生成中の送信Buttonは`応答を停止`へ変わり、操作時は`DELETE /api/dialogue/sessions/{session_id}/active`を送る。
+3. `DialogueClient`が画面内で生成した`session_id`、本文、`response_style`を`POST /api/dialogue/stream`へ送り、`application/x-ndjson`の`start -> text_delta* -> complete | error`を検証する。35秒でClient Timeoutにし、生成中の送信Buttonは`応答を停止`へ変わり、操作時は`DELETE /api/dialogue/sessions/{session_id}/active`を送る。
 4. FastAPIがPydanticで入力を検証し、Request IDを発行する。同じSessionの生成Taskを一つだけ`ActiveDialogue` Registryへ登録し、重複生成を409で拒否する。
 5. `ConversationMemoryStore`から同じSessionの直近履歴と要約を取り出し、`PersistentMemoryStore`から入力に文字列上関連する最大3件を検索する。
-6. Context Dataを命令ではなく参照情報として区切り、`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。Providerは本文と、許可済みEnum・0〜1強度・正規化時刻だけを持つ`PerformancePlan`を返す。開始しぐさ1件と途中Cue最大2件に制限し、実Providerが返したToken使用量は内部`ProviderUsage`へ正規化する。
-7. Provider完了後、停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider TaskをCancelし、本文表示、RAM履歴、明示長期記憶への追加を行わず`idle`へ戻す。既に保存開始へ入った場合は停止未成立として返し、成功扱いを偽らない。
-8. 成功した利用者発話と応答だけを1往復としてRAMへ追加し、10往復を超えた古い履歴を短文要約へ圧縮する。
-9. `覚えておいて：内容`に一致した成功Turnだけは、明示記憶としてSQLiteへ保存する。
-10. 応答形式と`PerformancePlan`をFrontendでも検証し、本文を`textContent`で安全に表示する。
-11. VOICEVOXの母音長を実WAV長へScaleし、音量Envelopeと合わせて5口形Lip Syncを行う。途中Cueは近いアクセント句境界へだけ寄せる。正常終了は感情別360〜680msの余韻後、停止・失敗は口形と予約Cueを破棄して即座に`idle`へ戻す。
-12. 失敗時は履歴も長期記憶も増やさず、秘密情報を含まない案内を表示して再送可能な状態へ戻す。
+6. Context Dataを命令ではなく参照情報として区切り、`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。OpenAIは`StructuredDialogueOutput`のRaw JSON Deltaから、完全にDecodeできた`reply`文字だけを公開する。Split EscapeやUnicode Surrogateは揃うまでBufferし、`performance` JSONを画面へ流さない。
+7. Browserは`text_delta`を一つの仮Assistant Messageへ追加する。Provider完了後、Pydanticで最終本文と、許可済みEnum・0〜1強度・正規化時刻だけを持つ`PerformancePlan`を検証する。開始しぐさ1件と途中Cue最大2件に制限し、実ProviderのToken使用量は内部`ProviderUsage`へ正規化する。
+8. 停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider Stream TaskをCancelし、仮Message、RAM履歴、明示長期記憶を破棄して`idle`へ戻す。既に保存開始へ入った場合は停止未成立として示し、成功扱いを偽らない。
+9. 成功した利用者発話と最終応答だけを1往復としてRAMへ追加し、10往復を超えた古い履歴を短文要約へ圧縮する。
+10. `覚えておいて：内容`に一致した成功Turnだけは、明示記憶としてSQLiteへ保存する。
+11. 最終応答形式と`PerformancePlan`をFrontendでも再検証し、仮Messageを確定する。本文は常に`textContent`で表示する。
+12. 最終本文後にVOICEVOXを開始し、母音長を実WAV長へScaleして音量Envelopeと合わせた5口形Lip Syncを行う。途中Cueは近いアクセント句境界へだけ寄せる。正常終了は感情別360〜680msの余韻後、停止・失敗は口形と予約Cueを破棄して即座に`idle`へ戻す。
+13. 失敗時は仮Messageを破棄し、履歴も長期記憶も増やさず、秘密情報を含まない案内を表示して再送可能な状態へ戻す。
 
 「新しい会話」は現在のSessionを`DELETE /api/dialogue/sessions/{session_id}`で消去してから、新しいSession IDへ切り替える。別Sessionの履歴は混ぜない。
 
 Push-to-Talkは別経路で、利用者のButton操作後だけ`getUserMedia`を呼ぶ。録音Blobを`POST /api/transcription`へ送り、認識Textを送信せずDraftへ戻す。利用者が確認・修正した後に通常のText対話経路へ渡す。
 
-Frontendの各Controllerは`performance.now()`でBrowser側の往復時間を測り、UIの「最近の計測」へ認識、応答、音声準備の直近値を独立して渡す。音声準備はVOICEVOXのWAV取得とLip Sync解析が終わるまでを含む。会話本文や音声を追加保存せず、最適化対象を判断するための一時表示だけを行う。
+Frontendの各Controllerは`performance.now()`でBrowser側の利用者体験時間を測り、UIの診断欄へ認識、最初のText、本文完了、音声再生開始を独立して渡す。Backend Logも初文・本文完了・Commit完了を分ける。会話本文や音声を計測用に追加保存せず、最適化対象を判断する一時表示だけを行う。
 
 ## Repository構成
 
@@ -111,7 +112,7 @@ adaptive-vrm-dialogue-agent/
 | renderDeveloperPanel | 診断用ViewModelのDOM描画 | Viewer/Providerの状態所有 |
 | Latency表示 | 各Controllerが測った直近のBrowser往復時間を整形 | 永続保存、同一Turnの合計とみなすこと |
 | DialogueController | Busy、生成停止、状態遷移、表示順序、Session IDと返答スタイルのSession内保持 | HTTP詳細、会話本文と返答スタイルの永続保存 |
-| DialogueClient | HTTP、Timeout、生成停止、返答スタイルを含むJSON検証、公開Error | Avatar制御、Provider選択 |
+| DialogueClient | POST NDJSON、Network Chunk再構成、Event/最終応答検証、Timeout、生成停止、公開Error | Avatar制御、Provider選択、Raw JSON表示 |
 | SpeechClient / Controller | Health、WAV検証、母音/句Timing検証、Object URL、再生・停止・再再生、制限付き再生速度 | 話者選択UI、本格感情音声 |
 | LipSyncController | PCM振幅、VOICEVOX 5母音、再生時刻同期、平滑化、停止Reset | 子音専用口形、録音音声の音素推定 |
 | PushToTalkController | 明示操作、Permission、マイク列挙・Session内選択、録音、自動/手動停止、Cancel、Draft反映 | 自動送信、永続録音、Device IDの永続保存 |
@@ -120,8 +121,8 @@ adaptive-vrm-dialogue-agent/
 | FastAPI | 入力と返答スタイル検証、Request ID、Session別Active Task、停止/保存境界、Provider呼出、観測可能Log | UI、永続会話 |
 | ConversationMemoryStore | Session分離、直近10往復、決定的要約、Reset、最大Session数 | Disk保存、意味検索、個人Profile |
 | PersistentMemoryStore | SQLite CRUD、明示保存、重複防止、文字重なり検索 | 暗号化、Embedding、通常会話の自動保存 |
-| Provider | Mock/OpenAI差異の吸収、明示Style適用、本文・制限付きPerformancePlan・任意Token使用量の生成 | 利用者能力の推定、Tool、履歴の所有、自由形式のAvatar命令 |
-| OpenAI評価Script | 明示Gate、架空4 Turn、Request上限、Latency/Token/費用Snapshot、停止Probe | API Key出力、実Data、一般化性能の主張、自動定期実行 |
+| Provider | Mock/OpenAI差異の吸収、明示Style適用、reply Delta・最終本文・制限付きPerformancePlan・任意Token使用量の生成 | 利用者能力の推定、Tool、履歴の所有、自由形式のAvatar命令 |
+| OpenAI評価Script | 明示Gate、架空4 Turn/Streaming、Request上限、初文/完了Latency・Token・費用Snapshot・停止Probe | API Key出力、実Data、一般化性能の主張、自動定期実行 |
 | Speech Provider | VOICEVOXの2段階API、Timeout、WAV検証 | Browser再生、Lip Sync、音声ライブラリ規約の自動判定 |
 | Transcription Provider | local faster-whisperの遅延Load、CPU推論、推論Lock | 録音保存、利用者確認の省略 |
 | VRMViewer | Scene、Model lifecycle、描画、Fallback | AI通信、会話判断 |
@@ -190,7 +191,7 @@ adaptive-vrm-dialogue-agent/
 
 ## 現在の技術的Risk
 
-- production JavaScriptが約854kBで、低性能PCや初回Loadに影響する可能性がある。
+- production JavaScriptが約859kBで、低性能PCや初回Loadに影響する可能性がある。
 - Pythonの間接依存を完全固定するlock fileがなく、将来のClean installで差が出る可能性がある。
 - 静的MarkupとDeveloper Panel描画は`UIController`から分離したが、対話、Memory、Model操作のEvent調整は同Classに残る。新しい主要画面を足す場合は領域別Controller化が必要。
 - OpenAIの固定`Safety Identifier`はローカル単一利用者用。公開時は個人情報を含まない利用者別識別子へ変える。
@@ -217,7 +218,7 @@ flowchart LR
     Conversation -. concrete use case only .-> Tools["Bounded Tools / Vision"]
 ```
 
-目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> 実Provider固定4 Turn評価`まで実装した。Natural Conversationの次のSliceはStreamingまたは段階表示と、最初の本文・本文完了・音声開始を分けるLatency計測である。その後にCharacter Identity、Trusted Memoryへ進む。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
+目標は、自然な会話、許可された記憶、本文と身体表現の一貫性、ローカル優先の利用者制御を一つのConversation Orchestratorへ統合すること。現在は`Session Memory -> 要約 -> local永続Memory -> 軽量検索 -> 明示Adaptive Interaction -> 生成停止 -> 実Provider評価 -> reply-only Streaming`まで実装した。Natural Conversationの次の候補は、文単位TTSで発話開始を早めるSliceか、v0.5 Character Identityで本文・声・身体表現の一貫性を上げるSliceである。Bounded AgentやVisionは、固定処理では解けない具体的な利用Scenarioと公開可能な評価Dataを用意できた場合だけ検討する。
 
 ## 別Repositoryへ分ける条件
 
