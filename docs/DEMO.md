@@ -25,7 +25,7 @@ Show the flow:
 1. the Avatar enters `thinking`;
 2. reply text appears incrementally through the typed NDJSON stream;
 3. the final schema validates before the UI displays the selected emotion, intensity, gesture, and cue count;
-4. VOICEVOX plays the response;
+4. VOICEVOX begins from the first closed sentence while later text is still arriving;
 5. the mouth follows the five-vowel timeline and the Avatar returns to `idle`.
 
 Mention that arbitrary bone names and scripts are not accepted. The plan is limited by a validated schema.
@@ -48,7 +48,7 @@ Do not store sensitive or real personal information in a public demo.
 
 ### 5. Evidence and limits — 20 seconds
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, only one fixed real-OpenAI streaming run rather than broad or user-rated conversation quality, speech generation still waits for final text, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
+Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, only one fixed real-OpenAI speech-streaming run rather than broad or user-rated conversation quality, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
 
 ## One-minute route
 

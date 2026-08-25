@@ -1,6 +1,10 @@
+import type { PerformancePlan } from "../types/character";
+import { getVoicePlaybackRate, resolveSpeechDurationMs } from "./SpeechPlayback";
 import { SpeechApiError } from "./SpeechClient";
+import { StreamingSpeechQueue } from "./StreamingSpeechQueue";
 import type { SpeechHealth, SpeechStatus, SpeechSynthesisResult, SpeechTiming } from "./types";
-import type { PerformancePlan, VoiceStyle } from "../types/character";
+
+export { getVoicePlaybackRate, resolveSpeechDurationMs } from "./SpeechPlayback";
 
 export interface SpeechGateway {
   readonly getHealth: (signal?: AbortSignal) => Promise<SpeechHealth>;
@@ -13,7 +17,11 @@ export interface SpeechAudio {
   readonly duration: number;
   readonly play: () => Promise<void>;
   readonly pause: () => void;
-  readonly addEventListener: (type: "ended" | "error", listener: () => void, options?: AddEventListenerOptions) => void;
+  readonly addEventListener: (
+    type: "ended" | "error",
+    listener: () => void,
+    options?: AddEventListenerOptions,
+  ) => void;
 }
 
 export interface SpeechCallbacks {
@@ -34,14 +42,14 @@ export interface LipSyncOutput {
   readonly dispose: () => void;
 }
 
-type AudioFactory = (url: string) => SpeechAudio;
-const MAX_SPEECH_DURATION_MS = 300_000;
+export type AudioFactory = (url: string) => SpeechAudio;
 
-interface ObjectUrlApi {
+export interface ObjectUrlApi {
   readonly createObjectURL: (blob: Blob) => string;
   readonly revokeObjectURL: (url: string) => void;
 }
 
+/** Coordinates health, legacy whole-reply speech, and the independent streaming queue. */
 export class SpeechController {
   private operationId = 0;
   private requestController: AbortController | null = null;
@@ -52,6 +60,7 @@ export class SpeechController {
   private latestText = "";
   private latestPerformance: PerformancePlan | null = null;
   private latestOnStarted: (() => void) | null = null;
+  private readonly streamingQueue: StreamingSpeechQueue;
   private disposed = false;
 
   public constructor(
@@ -60,7 +69,15 @@ export class SpeechController {
     private readonly lipSync: LipSyncOutput | null = null,
     private readonly createAudio: AudioFactory = (url) => new Audio(url),
     private readonly objectUrls: ObjectUrlApi = URL,
-  ) {}
+  ) {
+    this.streamingQueue = new StreamingSpeechQueue(
+      gateway,
+      callbacks,
+      lipSync,
+      createAudio,
+      objectUrls,
+    );
+  }
 
   public async initialize(): Promise<void> {
     const operationId = ++this.operationId;
@@ -74,11 +91,7 @@ export class SpeechController {
         const version = health.engine_version ? ` v${health.engine_version}` : "";
         const speaker = health.credit ?? `VOICEVOX / 話者ID ${health.speaker_id}`;
         const style = health.style_name ? ` / ${health.style_name}` : "";
-        this.setStatus(
-          "available",
-          `${speaker}${style}${version} / ID ${health.speaker_id}`,
-          "none",
-        );
+        this.setStatus("available", `${speaker}${style}${version} / ID ${health.speaker_id}`, "none");
       } else {
         this.setStatus("unavailable", health.message, "none");
       }
@@ -91,7 +104,8 @@ export class SpeechController {
   }
 
   public speak(text: string, performancePlan?: PerformancePlan, onStarted?: () => void): void {
-    this.cancelActive(false);
+    this.streamingQueue.discard();
+    this.cancelLegacy(false);
     this.latestAudio = null;
     this.latestTiming = null;
     this.latestText = text;
@@ -105,20 +119,50 @@ export class SpeechController {
     void this.generateAndPlay(text, operationId, controller, startedAt);
   }
 
+  public beginStreaming(onStarted?: () => void): void {
+    this.cancelLegacy(false);
+    this.latestAudio = null;
+    this.latestTiming = null;
+    this.latestText = "";
+    this.latestPerformance = null;
+    this.latestOnStarted = null;
+    this.streamingQueue.begin(onStarted);
+  }
+
+  public appendStreamingText(delta: string): void {
+    this.streamingQueue.append(delta);
+  }
+
+  public completeStreaming(finalText: string, performancePlan?: PerformancePlan): void {
+    const completion = this.streamingQueue.complete(finalText, performancePlan);
+    if (!completion.handled) this.speak(finalText, performancePlan, completion.onStarted);
+  }
+
   public toggle(): void {
-    if (this.cancelActive(true)) return;
-    if (!this.latestAudio || this.disposed) return;
+    if (this.cancelLegacy(true)) return;
+    if (this.streamingQueue.toggle() || !this.latestAudio || this.disposed) return;
     const operationId = ++this.operationId;
     void this.playLatest(operationId, false);
   }
 
   public stop(): void {
-    this.cancelActive(true);
+    if (!this.cancelLegacy(true)) this.streamingQueue.stop(true);
+  }
+
+  public discard(): void {
+    this.cancelLegacy(false);
+    this.streamingQueue.discard();
+    this.latestAudio = null;
+    this.latestTiming = null;
+    this.latestText = "";
+    this.latestPerformance = null;
+    this.latestOnStarted = null;
   }
 
   public dispose(): void {
     this.disposed = true;
-    this.cancelActive(false);
+    this.cancelLegacy(false);
+    this.streamingQueue.dispose();
     this.lipSync?.dispose();
     this.latestAudio = null;
     this.latestTiming = null;
@@ -218,7 +262,7 @@ export class SpeechController {
     this.callbacks.onPlaybackChange({ type: failed ? "failed" : "completed" });
   }
 
-  private cancelActive(announce: boolean): boolean {
+  private cancelLegacy(announce: boolean): boolean {
     const wasActive = this.requestController !== null || this.audio !== null;
     if (!wasActive) return false;
     this.operationId += 1;
@@ -242,7 +286,11 @@ export class SpeechController {
     this.audioUrl = null;
   }
 
-  private async prepareLipSync(audio: Blob, timing: SpeechTiming | null, operationId: number): Promise<void> {
+  private async prepareLipSync(
+    audio: Blob,
+    timing: SpeechTiming | null,
+    operationId: number,
+  ): Promise<void> {
     if (!this.lipSync) return;
     try {
       const ready = await this.lipSync.prepare(audio, timing);
@@ -270,35 +318,4 @@ export class SpeechController {
     }
     return "音声処理で予期しないエラーが発生しました。";
   }
-}
-
-export function getVoicePlaybackRate(performance: PerformancePlan | null): number {
-  if (!performance) return 1;
-  const targetRates: Readonly<Record<VoiceStyle, number>> = {
-    neutral: 1,
-    warm: 0.98,
-    bright: 1.06,
-    gentle: 0.93,
-    serious: 0.96,
-  };
-  return 1 + (targetRates[performance.voice_style] - 1) * performance.intensity;
-}
-
-export function resolveSpeechDurationMs(
-  mediaDurationSeconds: number,
-  text: string,
-  playbackRate: number,
-  metadataDurationMs: number | null = null,
-): number {
-  const safeRate = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1;
-  if (Number.isFinite(mediaDurationSeconds) && mediaDurationSeconds > 0) {
-    return Math.round(Math.max(800, Math.min(MAX_SPEECH_DURATION_MS, (mediaDurationSeconds * 1000) / safeRate)));
-  }
-  if (metadataDurationMs !== null && Number.isFinite(metadataDurationMs) && metadataDurationMs > 0) {
-    return Math.round(Math.max(800, Math.min(MAX_SPEECH_DURATION_MS, metadataDurationMs / safeRate)));
-  }
-  const punctuationPauses = (text.match(/[。！？!?、，,]/g) ?? []).length * 120;
-  return Math.round(
-    Math.max(1_000, Math.min(MAX_SPEECH_DURATION_MS, (text.length * 115 + punctuationPauses) / safeRate)),
-  );
 }

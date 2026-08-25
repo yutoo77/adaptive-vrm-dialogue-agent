@@ -48,8 +48,12 @@ export interface DialogueGateway {
 
 export interface SpeechOutput {
   readonly speak: (text: string, performance?: PerformancePlan, onStarted?: () => void) => void;
+  readonly beginStreaming?: (onStarted?: () => void) => void;
+  readonly appendStreamingText?: (delta: string) => void;
+  readonly completeStreaming?: (finalText: string, performance?: PerformancePlan) => void;
   readonly toggle: () => void;
   readonly stop: () => void;
+  readonly discard?: () => void;
   readonly dispose: () => void;
 }
 
@@ -245,6 +249,17 @@ export class DialogueController {
     this.requestController = controller;
     let partialReply = "";
     let firstTextObserved = false;
+    let responseFinalized = false;
+    const streamingSpeech = resolveStreamingSpeech(this.gateway, this.speechOutput);
+    const reportSpeechStarted = (): void => {
+      if (this.disposed) return;
+      this.callbacks.onResponseTiming?.(
+        "speech-start",
+        Math.max(0, Math.round(performance.now() - startedAt)),
+      );
+      if (!responseFinalized) this.callbacks.onCharacterState("speaking");
+    };
+    streamingSpeech?.beginStreaming(reportSpeechStarted);
     const receiveTextDelta = (delta: string): void => {
       if (!delta || this.disposed || this.cancelRequested) return;
       partialReply += delta;
@@ -256,6 +271,7 @@ export class DialogueController {
         );
       }
       this.callbacks.onPartialAssistantMessage?.(partialReply);
+      streamingSpeech?.appendStreamingText(delta);
     };
     try {
       const response = this.gateway.streamMessage
@@ -275,6 +291,7 @@ export class DialogueController {
       if (this.disposed) return;
       if (this.cancelRequested && await this.finishCancellation()) return;
       if (!firstTextObserved) receiveTextDelta(response.reply);
+      responseFinalized = true;
       const textCompleteMs = Math.max(0, Math.round(performance.now() - startedAt));
       this.callbacks.onLatency?.(textCompleteMs);
       this.callbacks.onResponseTiming?.("text-complete", textCompleteMs);
@@ -297,14 +314,11 @@ export class DialogueController {
       this.callbacks.onCharacterState(performanceEmotionToState(response.performance.emotion));
       this.callbacks.onPerformancePlan?.(response.performance);
       if (this.speechOutput) {
-        this.speechOutput.speak(response.reply, response.performance, () => {
-          if (!this.disposed) {
-            this.callbacks.onResponseTiming?.(
-              "speech-start",
-              Math.max(0, Math.round(performance.now() - startedAt)),
-            );
-          }
-        });
+        if (streamingSpeech) {
+          streamingSpeech.completeStreaming(response.reply, response.performance);
+        } else {
+          this.speechOutput.speak(response.reply, response.performance, reportSpeechStarted);
+        }
       } else {
         const displayMs = Math.min(7000, Math.max(2800, response.reply.length * 55));
         this.idleTimer = globalThis.setTimeout(() => {
@@ -317,6 +331,7 @@ export class DialogueController {
         const cancelled = await this.finishCancellation();
         if (cancelled) return;
       }
+      streamingSpeech?.discard();
       this.callbacks.onDiscardPartialAssistantMessage?.();
       this.callbacks.onError(this.getPublicError(error));
       this.callbacks.onCharacterState("error");
@@ -355,7 +370,11 @@ export class DialogueController {
   }
 
   private resetAfterCancellation(): void {
-    this.speechOutput?.stop();
+    if (this.speechOutput?.discard) {
+      this.speechOutput.discard();
+    } else {
+      this.speechOutput?.stop();
+    }
     this.clearIdleTimer();
     this.callbacks.onDiscardPartialAssistantMessage?.();
     this.callbacks.onCharacterState("idle");
@@ -436,6 +455,34 @@ export class DialogueController {
     if (this.idleTimer !== null) globalThis.clearTimeout(this.idleTimer);
     this.idleTimer = null;
   }
+}
+
+interface StreamingSpeechOutput {
+  readonly beginStreaming: (onStarted?: () => void) => void;
+  readonly appendStreamingText: (delta: string) => void;
+  readonly completeStreaming: (finalText: string, performance?: PerformancePlan) => void;
+  readonly discard: () => void;
+}
+
+function resolveStreamingSpeech(
+  gateway: DialogueGateway,
+  speechOutput: SpeechOutput | null,
+): StreamingSpeechOutput | null {
+  if (
+    !gateway.streamMessage ||
+    !speechOutput?.beginStreaming ||
+    !speechOutput.appendStreamingText ||
+    !speechOutput.completeStreaming ||
+    !speechOutput.discard
+  ) {
+    return null;
+  }
+  return {
+    beginStreaming: (onStarted) => speechOutput.beginStreaming?.(onStarted),
+    appendStreamingText: (delta) => speechOutput.appendStreamingText?.(delta),
+    completeStreaming: (finalText, performance) => speechOutput.completeStreaming?.(finalText, performance),
+    discard: () => speechOutput.discard?.(),
+  };
 }
 
 function defaultSessionIdFactory(): string {

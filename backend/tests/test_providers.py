@@ -5,11 +5,14 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from app.config import Settings
 from app.conversation import ConversationMessage, DialogueContext, MemorySnippet
 from app.performance import PerformancePlan, StructuredDialogueOutput
 from app.providers import (
     OpenAIProvider,
+    ProviderError,
     ProviderStreamCompleted,
     ProviderTextDelta,
     _StructuredReplyDeltaDecoder,
@@ -139,6 +142,15 @@ def test_structured_reply_decoder_never_exposes_json_and_handles_split_escapes()
     assert "performance" not in visible
 
 
+def test_structured_reply_decoder_holds_outer_whitespace_until_final_validation() -> None:
+    raw = json.dumps({"reply": "  本文です。  ", "performance": {}}, ensure_ascii=False)
+    decoder = _StructuredReplyDeltaDecoder()
+
+    visible = "".join(decoder.feed(character) for character in raw)
+
+    assert visible == "本文です。"
+
+
 def test_openai_provider_streams_only_reply_then_returns_validated_plan() -> None:
     provider = OpenAIProvider(Settings(provider="openai", openai_api_key="test-key"))
     fake_client = FakeOpenAIClient()
@@ -167,3 +179,34 @@ def test_openai_provider_streams_only_reply_then_returns_validated_plan() -> Non
     assert fake_client.responses.kwargs is not None
     assert fake_client.responses.kwargs["store"] is False
     assert fake_client.responses.kwargs["text_format"] is StructuredDialogueOutput
+
+
+def test_openai_provider_rejects_a_stream_that_differs_from_the_validated_reply() -> None:
+    class MismatchResponses(FakeResponses):
+        def stream(self, **kwargs: Any) -> FakeStream:
+            self.kwargs = kwargs
+            raw = json.dumps(
+                {"reply": "途中では異なる文です。", "performance": {}},
+                ensure_ascii=False,
+            )
+            return FakeStream(raw)
+
+    provider = OpenAIProvider(Settings(provider="openai", openai_api_key="test-key"))
+    fake_client = FakeOpenAIClient()
+    fake_client.responses = MismatchResponses()
+    provider._client = fake_client  # type: ignore[assignment]
+    context = DialogueContext(recent_messages=(), session_summary=None, relevant_memories=())
+
+    async def collect() -> None:
+        async for _event in provider.stream_reply(
+            "テスト",
+            context,
+            "balanced",
+            "request-mismatch-test",
+        ):
+            pass
+
+    with pytest.raises(ProviderError) as captured:
+        asyncio.run(collect())
+
+    assert captured.value.code == "stream_mismatch"

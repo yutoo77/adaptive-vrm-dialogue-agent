@@ -12,7 +12,7 @@
 
 ## 現在のRelease目標
 
-`v0.4 Natural Conversation`のEngineering Sliceは完了した。生成停止と非保存契約、実OpenAI固定4 Turn、reply-only Streaming、初文・本文完了・発話開始の分離計測まで実装・評価済みである。次の主要判断は、文単位TTSで発話開始を早めるか、`v0.5 Character Identity`で本文・声・身体表現の一貫性を先に高めるかである。
+`v0.4 Natural Conversation`のEngineering Sliceは完了した。生成停止と非保存契約、実OpenAI固定4 Turn、reply-only Streaming、文単位VOICEVOX Queue、初文・本文完了・発話開始の分離計測まで実装・評価済みである。次の主要Sliceは`v0.5 Character Identity`で本文・声・身体表現の一貫性を高める。
 
 ### Public Portfolio Gate
 
@@ -109,18 +109,27 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 実OpenAIで42 Delta、初文3,321ms、本文完了4,117ms、先行表示796ms、完了費用$0.0003424
 - 実Streamingの100ms CancelはLocalで0ms終了。上流計算と請求の停止は保証しない
 
+### Natural Conversation — Closed-sentence Speech Queue
+
+- 未完語句を読ませず、`。！？!?`・改行で閉じた文だけを先行VOICEVOX合成
+- 合成Queueと再生Queueを分離し、再生中に次文を合成しながら順序を維持
+- 停止・失敗時にActive synthesis、未再生文、Audio、Lip Sync、Replay Dataを一括破棄
+- 最終本文との不一致をBackend/Frontendで拒否し、MemoryとPerformanceは最終検証後だけCommit
+- 実OpenAI 1件 + 実VOICEVOXでWAV準備6,142ms、従来比較9,019ms、先行2,877ms
+- 先行音声は取消不能、最終Plan前の最初の文は中立速度というRiskを明示
+
 ## 現在のEvidence
 
 | 対象 | 自動確認 | 実動作確認 | 残るGap |
 | --- | --- | --- | --- |
-| Frontend | Type/lint/build、Vitest 67件、Playwright 5件（Mock一往復・Streaming・返答スタイル・生成停止・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
-| Backend | Ruff、Pytest 60件、pip check | Mock/VOICEVOX Health、実OpenAI固定4 Turn・Streaming | 多様な実会話、複数回の分散 |
-| Voice output | API/WAV/Stop/Timing Test | 実VOICEVOX 10/10 | Engine処理の途中Cancel |
+| Frontend | Type/lint/build、Vitest 77件、Playwright 6件（Mock一往復・Text/Speech Streaming・返答スタイル・生成停止・段階的開示・Mobile） | Desktop/390px/319px、実VRM、Mock一往復 | Bundle分割、動的UIの追加分割 |
+| Backend | Ruff、Pytest 64件、pip check | Mock/VOICEVOX Health、実OpenAI固定4 Turn・Text/Speech Streaming | 多様な実会話、複数回の分散 |
+| Voice output | API/WAV/Stop/Timing/文分割/順序/失敗Test | 実VOICEVOX 10/10、実Pipeline 1件 | Engine処理の途中Cancel、利用者評価 |
 | Voice input | Permission/無音/Cancel/マイクTest | 実マイク短文1件 | Noiseを含む固定10文 |
 | Performance | Schema/Cue/Reduced Motion Test | 固定10文10/10、実VRM | 皮肉・未知言い換え |
 | Interaction | 4種のSchema/API/UI伝播、不明値拒否、OpenAI Instruction Test | Mock 4種、実OpenAI固定4 Turn 21/21 | 多様な文章品質、利用者評価 |
 | Generation cancel | Active Stream Task、仮Text破棄、停止/保存境界、非保存、UI復帰をAPI/Unit/Browserで確認 | Mock API、実Streamingは100ms後Cancelから0msで終了 | 上流計算/請求の停止保証 |
-| Streaming | Split JSON/Unicode、NDJSON Chunk、仮Message、最終CommitをProvider/API/Client/Controller/Browserで確認 | 実OpenAI 42 Delta、先行表示796ms | 複数回分散、文単位TTS、利用者評価 |
+| Streaming | Split JSON/Unicode/外側空白、NDJSON、仮Message、文単位Speech Queue、最終CommitをProvider/API/Client/Controller/Browserで確認 | 実OpenAI 42 Delta、先行表示796ms、Speech準備2,877ms前倒し | 複数回分散、可聴Latency、利用者評価 |
 | Memory | Session/Persistence/Search Test | CRUD UI | 言い換え検索の定量評価 |
 | Security | Local pattern scan、Gitleaks CI、npm/pip audit 0件 | Loopback bind/ignored data、Public RepositoryのSecret scanning確認 | 新しい依存・Data追加時の継続監査 |
 
@@ -135,6 +144,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - Character Profile、会話履歴、明示記憶、返答スタイルを一つのContext契約へ整理する。
 - [x] 生成Cancel、発話・Cue・口形の一括停止を設計・実装する。
 - [x] Text Streamingを、Raw Structured JSONを見せないreply-only契約で実装する。
+- [x] 閉じた文だけを先行合成し、順序、停止、最終本文一致を持つSpeech Queueを実装する。
 - [x] 最初のText、本文完了、音声開始までのLatencyをBrowserで分けて計測する。
 - [x] 固定した代表会話で、文脈保持、冗長さ、不確実性、Character表現を評価する。一般化と利用者評価は別課題とする。
 - 既定MockとText fallbackを維持し、実Providerが使えなくても起動とDemoを継続できるようにする。
@@ -165,7 +175,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 1. 実マイク固定10文を静音/生活雑音で比較し、意味保持率、再試行、Latencyを記録する。
 2. 初回Setup、依存診断、Engine状態、復帰手順を一つの起動体験へまとめる。
-3. Three.js/VRMをDynamic importし、約859kBのproduction bundleを分割する。
+3. Three.js/VRMをDynamic importし、約870kBのproduction bundleを分割する。
 4. 主要画面を追加する場合だけ、残る`UIController` Event調整を領域別に分割する。
 5. Windows以外の起動導線が必要になった場合だけ、Cross-platform scriptまたはPackagingを選ぶ。
 

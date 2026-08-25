@@ -42,7 +42,7 @@ Avatarが学習効果を必ず高める、Voiceが常に使いやすい、とは
 | --- | --- | --- |
 | VRM | 表示、Placeholder、状態・表情・姿勢・視線、Reduced Motion | Browser実モデル確認、Frontend Test |
 | Text dialogue | Mock/OpenAI境界、reply-only Streaming、明示返答スタイル4種、入力/応答検証、生成中の停止、Token使用量、Timeout、Request ID | API/Controller/Browser Test、停止時非保存Test、実OpenAI固定4 Turn 4/4・Streaming 42 Delta |
-| Voice output | VOICEVOX、停止、再再生、Fallback | 実Engine固定10件、Browser確認 |
+| Voice output | VOICEVOX、閉じた文の先行合成、順序Queue、停止、再再生、Fallback | 実Engine固定10件、実OpenAI+VOICEVOX 1件、Browser確認 |
 | Lip Sync | 実WAVへScaleした5母音と句境界Cue | Timing固定10件、実VRM確認 |
 | Voice input | Push-to-Talk、マイク選択、自動停止、Draft確認 | 自動Testと実マイク1件。Noise評価は未完了 |
 | Memory | Session 10往復、決定的要約、明示SQLite、CRUD、Local検索 | Session分離/Persistence Test |
@@ -85,7 +85,11 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 
 ### Structured OutputをそのままStreamingしない
 
-本文と演技Planを一つのSchemaで生成しつつ、途中表示ではRaw JSONを利用者へ見せない。Backendが`reply`文字列の安全にDecodeできた部分だけをNDJSON Deltaへ変換し、`PerformancePlan`、Memory、音声は最終Pydantic検証と保存開始境界を通過した後だけ確定する。途中Textは仮表示であり、停止・失敗時に破棄する。
+本文と演技Planを一つのSchemaで生成しつつ、途中表示ではRaw JSONを利用者へ見せない。Backendが`reply`文字列の安全にDecodeできた部分だけをNDJSON Deltaへ変換し、`PerformancePlan`とMemoryは最終Pydantic検証と保存開始境界を通過した後だけ確定する。途中Textと先行音声Queueは仮状態であり、停止・失敗時に破棄する。
+
+### 未完の語句を読み上げない
+
+Text表示より取消しにくい音声は、Token単位ではVOICEVOXへ渡さない。句点・疑問符・感嘆符・改行で閉じた文だけを先行合成し、合成順と再生順を別Queueで固定する。最終本文と一致しない場合、停止、Provider失敗では未再生音声とLip Syncを破棄する。一方、既に聞こえた文は取り消せないため、Memoryと演技Planを早期Commitしたとは扱わず、制約として明示する。
 
 ## 完成条件
 
@@ -93,7 +97,7 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 
 - READMEだけでCleanなWindows環境から起動できる。
 - MockでText対話を無料・外部AI送信なしで再現できる。
-- 実Provider利用時に、複数Turnの会話、Streaming初文、本文完了、停止到達時間、費用・送信範囲を評価できる。架空Dataによる実OpenAI固定4 TurnとStreaming 1件は完了したが、多様な会話、複数回の分散、利用者が感じる自然さは未評価である。停止ProbeはLocal coroutineの終了だけを確認し、上流計算や請求の停止を保証しない。
+- 実Provider利用時に、複数Turnの会話、Streaming初文、本文完了、発話準備、停止到達時間、費用・送信範囲を評価できる。架空Dataによる実OpenAI固定4 Turn、Text Streaming 1件、Speech Streaming 1件は完了したが、多様な会話、複数回の分散、利用者が感じる自然さは未評価である。停止ProbeはLocal coroutineの終了だけを確認し、上流計算や請求の停止を保証しない。
 - 長期記憶は利用者が明示許可した内容だけとし、参照理由の確認、編集、削除、全削除ができる。
 - 一つのTurnで本文、声、表情、視線、しぐさが矛盾せず、停止・割り込み時に一緒にResetできる。
 - VRM、VOICEVOX、Microphoneのどれかが失敗しても、利用可能な経路を残す。
@@ -127,7 +131,7 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 - 必須Software: Node.js、Python、Browser。無料。
 - 既定Demo: Mock。無料、外部AI送信なし。
 - Voice: VOICEVOX/faster-whisper。無料だがLocal Resourceと各License条件が必要。
-- OpenAI: 任意。明示設定したRequestだけ料金と外部送信が発生する。2026-08-25の固定4 Turnは完了Request分で$0.001601、Streaming完了1件は$0.0003424。停止RequestはToken使用量を取得できず、費用不明として除外した。`store=False`はZero Data Retentionを意味しない。
+- OpenAI: 任意。明示設定したRequestだけ料金と外部送信が発生する。2026-08-25の固定4 Turnは完了Request分で$0.001601、Text Streaming 1件は$0.0003424、Speech Pipeline 1件は$0.0003892。停止RequestはToken使用量を取得できず、費用不明として除外した。`store=False`はZero Data Retentionを意味しない。
 - Cloud/公開Server: 現在は不採用。認証、Data retention、費用上限を設計してから検討する。
 
 ## Portfolioで説明する中心
@@ -143,5 +147,6 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 9. 停止受付と会話・長期記憶の保存開始を分け、取消結果を偽らないConcurrency設計。
 10. 実ProviderのLatency、Token、既知費用を記録し、停止時の上流費用を推測で埋めない評価境界。
 11. Structured Outputの型安全性と途中Text表示を両立し、最終検証前の演技・Memory Commitを許さないStreaming境界。
+12. 取消不能な先行音声を閉じた文だけに限定し、合成・再生の順序と失敗時破棄を独立Queueで扱うConcurrency設計。
 
 実装詳細は[ARCHITECTURE.md](ARCHITECTURE.md)、公開前後の優先順位は[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)を参照する。
