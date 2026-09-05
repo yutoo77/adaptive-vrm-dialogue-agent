@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import math
 import wave
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -78,16 +80,30 @@ class VoicevoxSpeechProvider:
         self._timeout = settings.voicevox_timeout_seconds
         self._transport = transport
         self._voice_profile = profile.voice
+        self._client: httpx.AsyncClient | None = None
+
+    @asynccontextmanager
+    async def _connection(self) -> AsyncIterator[httpx.AsyncClient]:
+        # The application owns this pool; a sentence must not rebuild it.
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout,
+                transport=self._transport,
+                trust_env=False,
+            )
+        yield self._client
+
+    async def aclose(self) -> None:
+        client, self._client = self._client, None
+        if client is not None:
+            await client.aclose()
 
     async def check_health(self) -> SpeechHealth:
         speaker_name: str | None = None
         style_name: str | None = None
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=self._timeout,
-                transport=self._transport,
-            ) as client:
+            async with self._connection() as client:
                 response = await client.get("/version")
                 response.raise_for_status()
                 version = response.json()
@@ -121,11 +137,7 @@ class VoicevoxSpeechProvider:
 
     async def synthesize(self, text: str, request_id: str) -> SpeechSynthesisResult:
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=self._timeout,
-                transport=self._transport,
-            ) as client:
+            async with self._connection() as client:
                 query_response = await client.post(
                     "/audio_query",
                     params={"text": text, "speaker": self.speaker_id},

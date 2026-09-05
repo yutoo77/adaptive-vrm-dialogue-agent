@@ -14,7 +14,7 @@ Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
-> Screenshot: AvatarSample_A © pixiv Inc. / pixiv VRoid Project。モデル本体はRepositoryへ含めていません。背景の円窓、格子、水紋、光はCSSとThree.jsで制作した本Project固有のStageです。
+> 上はv0.6時点の画面です。2026-09-05のUI改修では背景装飾を整理し、会話本文を16pxに、設定を別パネルに変更しています。画像の更新は公開用素材の確認後に行います。AvatarSample_A © pixiv Inc. / pixiv VRoid Project。モデル本体はRepositoryへ含めていません。
 
 ## 解決したい課題
 
@@ -44,6 +44,14 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 3分版と1分版の説明順、失敗時の復帰手順は[Demo Guide](docs/DEMO.md)にまとめています。
 
+### 画面の操作
+
+会話欄の下からメッセージを送ります。PCではEnterで送信、Shift + Enterで改行できます。複数行の下書きは入力欄が広がり、日本語の変換確定では送信しません。送信中は同じボタンが停止に変わります。
+
+「設定」から音声と明示登録の記憶を開けます。「表示を調整」はモデル・表情・カメラへ直接移動します。設定を閉じても会話と下書きは維持され、Escapeでも閉じられます。音声エラーの「詳細」には元のエラーと回復方法を残しています。
+
+接続先の「Mock」は定型応答であり、ローカルLLMではありません。画面設計の理由と検証方針は[UI設計メモ](docs/UI_DESIGN.md)を参照してください。
+
 ## 主な機能
 
 | 領域 | 実装内容 |
@@ -57,7 +65,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 | Adaptive Performance | 感情6種、Gesture 4種、Voice Style 5種、強度0〜1、途中Cue最大2件の制限付きPlan |
 | Embodied Continuity | Session別RAM感情、最大2 Turnの減衰、明示変化の優先、反復Gesture抑制、視線6種、発話後の感情Baseline |
 | Memory | Session別直近10往復、決定的要約、明示登録だけのSQLite長期記憶、CRUD、文字重なり検索 |
-| Visual identity | 深藍・白練・藤色を軸にしたCode-native Stage、状態連動の環境光、外部画像Assetなし |
+| UI / Visual identity | 白と青を軸にした会話ワークスペース、16px本文、静かな月のStage、音声・記憶・キャラクター設定のdialog、外部画像Assetなし |
 | Accessibility / UX | `prefers-reduced-motion`対応、演技強度3段階、Keyboard focus、文脈に応じた状態表示、段階的開示 |
 | Observability | 認識・初文・本文完了・発話開始の直近時間、Backend Request ID、Providerと失敗CodeのLog |
 
@@ -305,7 +313,9 @@ npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e`はMock固定のBackendとFrontendを必要に応じて自動起動し、Chromiumで対話一往復、2 Turnの感情余韻、Text Streaming、返信中の文単位Speech Request、返答スタイル、生成中の応答停止、詳細設定の段階的開示、Mobile初期Viewportと横Overflowを確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
+`npm run test:e2e`は専用ポート15173/18000にMock固定のBackendとFrontendを起動します。ブラウザテスト用の長期記憶はRAMへ隔離し、所有者のSQLiteは開きません。Chromiumで対話、短期感情、Streaming、先行音声要求、返答スタイル、停止、設定のキーボード操作、下書き保持、記憶の編集、音声Fallback、狭い画面を確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
+
+2026-09-05のUI改修では、Frontend単体83件・ブラウザ13件、Backend75件、Buildと静的検査を確認しました。実画面の測定値、初回の失敗と修正、未確認事項は[UI確認記録](docs/UI_REVIEW.md)に分けています。
 
 2026-08-25時点の確認結果:
 
@@ -328,6 +338,9 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 
 ## Evaluation
 
+- [実API対話の再確認 / Textと演技データ3件・残る体験評価](docs/evaluations/real-api-tempo-2026-09-06.md)
+- [描画環境と会話テンポ / GPU実測とFPS計測の修正](docs/evaluations/rendering-tempo-2026-09-06.md)
+- [Conversation tempo / 音声接続の再利用と計測の限界](docs/evaluations/conversation-tempo-2026-09-05.md)
 - [Voice output / 10回連続合成](docs/evaluations/voice-output-2026-08-15.md)
 - [Push-to-Talk / 実音声認識](docs/evaluations/speech-input-2026-08-15.md)
 - [Adaptive Performance / 固定10文とFailure Case](docs/evaluations/adaptive-performance-2026-08-18.md)

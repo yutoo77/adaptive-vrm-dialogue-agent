@@ -1,12 +1,14 @@
 import io
 import json
 import wave
+from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.persistent_memory import PersistentMemoryStore
 from app.speech import VoicevoxSpeechProvider
 
 
@@ -108,3 +110,52 @@ def test_voicevox_connection_failure_is_reported_without_response_details() -> N
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "voicevox_unreachable"
     assert "private diagnostic" not in response.text
+
+
+def test_voicevox_reuses_client_and_closes_it_at_application_shutdown() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/version":
+            return httpx.Response(200, json="0.25.2")
+        if request.url.path == "/speakers":
+            return httpx.Response(200, json=[])
+        if request.url.path == "/audio_query":
+            return httpx.Response(200, json=AUDIO_QUERY)
+        return httpx.Response(200, content=WAV_BYTES)
+
+    provider = VoicevoxSpeechProvider(Settings(), transport=httpx.MockTransport(handler))
+    original_client = httpx.AsyncClient
+    with patch("app.speech.httpx.AsyncClient", wraps=original_client) as constructor:
+        with TestClient(create_app(
+            settings=Settings(), speech_provider=provider,
+            persistent_memory_store=PersistentMemoryStore(":memory:"),
+        )) as client:
+            assert client.get("/api/speech/health").json()["status"] == "ready"
+            for _ in range(3):
+                assert client.post("/api/speech", json={"text": "同じ声"}).content == WAV_BYTES
+            constructor.assert_called_once()
+            assert constructor.call_args.kwargs["trust_env"] is False
+            pooled = provider._client
+            assert pooled is not None and not pooled.is_closed
+        assert pooled.is_closed
+        assert provider._client is None
+
+
+def test_voicevox_pool_recovers_after_a_connection_failure() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ConnectError("temporary failure", request=request)
+        if request.url.path == "/audio_query":
+            return httpx.Response(200, json=AUDIO_QUERY)
+        return httpx.Response(200, content=WAV_BYTES)
+
+    provider = VoicevoxSpeechProvider(Settings(), transport=httpx.MockTransport(handler))
+    with TestClient(create_app(
+        settings=Settings(), speech_provider=provider,
+        persistent_memory_store=PersistentMemoryStore(":memory:"),
+    )) as client:
+        assert client.post("/api/speech", json={"text": "一度失敗"}).status_code == 503
+        assert client.post("/api/speech", json={"text": "再試行"}).content == WAV_BYTES

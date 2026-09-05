@@ -6,8 +6,8 @@ This guide provides a repeatable three-minute demonstration and a one-minute sho
 
 1. Complete `./setup.ps1` and start VOICEVOX if voice output is required.
 2. Put a permitted VRM at `frontend/public/models/private/character.vrm`, or prepare it for selection in the browser.
-3. Run `./start_demo.ps1` and confirm `月白 しずく v1.0.0`, the compact `ローカル` provider badge, the response style `自然`, and the selected VRM name, or the placeholder if no model is used.
-4. If voice output is part of the demo, open `音声設定`, send one short message, and confirm that VOICEVOX plays it. A healthy idle state is intentionally not repeated on the main screen.
+3. Run `./start_demo.ps1` and confirm `月白 しずく`, the `Mock` provider badge, response style `自然に`, and the Avatar or placeholder. Mock means fixed test replies, not a local LLM. The model name and Character Profile version are under `表示を調整` (version in `診断情報`).
+4. If voice output is part of the demo, open `設定 → 音声`, then close settings, send one short message, and confirm that VOICEVOX plays it. The short failure message opens the full details; a healthy idle state is not repeated on the main screen.
 5. Do not show API keys, local files, terminal logs, microphone device names, or private long-term memory in a recording.
 
 ## Three-minute route
@@ -32,7 +32,7 @@ Show the flow:
 
 Mention that arbitrary bone names and scripts are not accepted. The plan is limited by a validated schema.
 
-Change `返し方` from `自然` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or a hidden psychological profile from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
+Change `返答` from `自然に` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or a hidden psychological profile from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
 
 Optional continuity check: send `今日は疲れた` and then a neutral follow-up such as `そうなんだ`. The second response should show `余韻` rather than starting a new large gesture, while the weakened gentle expression, gaze, and breathing remain. Then send `少し気持ちが軽くなった` and confirm that the explicit recovery replaces the old gentle state. This state remains in RAM for at most two turns and is cleared by `新しい会話`.
 
@@ -46,7 +46,7 @@ If microphone permission or transcription fails, show that Text input remains av
 
 ### 4. Memory and user control — 30 seconds
 
-Send `覚えておいて：好きな色は青`, then open `記憶`. Show that only explicit content is persisted, it can be edited or deleted, and a new conversation clears the RAM session separately.
+Send `覚えておいて：好きな色は青`, then open `設定 → 記憶`. Show that only explicit content is persisted, it can be edited or deleted, and a new conversation clears the RAM session separately. Closing settings preserves the draft and returns keyboard focus to the opening button.
 
 Do not store sensitive or real personal information in a public demo.
 
@@ -62,6 +62,12 @@ Close with the test and evaluation evidence, then state the limitations: no Inte
 4. State one measured limitation and the next improvement in 5 seconds.
 
 ## Recovery during a live demo
+
+Before describing response speed, distinguish first text (`初字`), completed text (`本文`), and browser playback start (`発話`) in `設定 → 音声 → 診断情報`. These dialogue metrics start at send; they exclude microphone recognition and manual draft confirmation. The [tempo evaluation](evaluations/conversation-tempo-2026-09-05.md) reports a local connection optimization, not a completed natural-conversation performance gate.
+
+The [rendering follow-up](evaluations/rendering-tempo-2026-09-06.md) measures real VRM and local speech with GPU-backed Chromium, but Mock replies. Do not present the faster test-browser numbers as an app-wide speedup or real-LLM conversational latency. Ordinary headless operation tests deliberately remain separate from hardware-dependent tempo evaluation.
+
+The [real-API follow-up](evaluations/real-api-tempo-2026-09-06.md) verifies three Backend-only Text/performance responses. It does not include browser playback. The 3–5 minute natural-conversation demo is still an acceptance target, not a completed test.
 
 | Problem | Recovery |
 | --- | --- |

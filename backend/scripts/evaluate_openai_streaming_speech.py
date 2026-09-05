@@ -193,12 +193,7 @@ def main() -> int:
         return 2
 
     try:
-        result = asyncio.run(
-            evaluate(
-                OpenAIProvider(settings),
-                VoicevoxSpeechProvider(settings),
-            )
-        )
+        result = asyncio.run(_evaluate_with_owned_speech(settings))
     except (ProviderError, SpeechProviderError) as error:
         print(
             json.dumps(
@@ -217,6 +212,14 @@ def main() -> int:
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["pipeline"]["all_checks_passed"] else 1
+
+
+async def _evaluate_with_owned_speech(settings: Settings) -> dict[str, Any]:
+    speech = VoicevoxSpeechProvider(settings)
+    try:
+        return await evaluate(OpenAIProvider(settings), speech)
+    finally:
+        await speech.aclose()
 
 
 if __name__ == "__main__":

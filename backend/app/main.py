@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Annotated
@@ -103,7 +103,17 @@ def create_app(
     active_dialogue_lock = asyncio.Lock()
     active_dialogues: dict[str, _ActiveDialogue] = {}
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            close_speech = getattr(resolved_speech_provider, "aclose", None)
+            if close_speech is not None:
+                await close_speech()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Adaptive VRM Dialogue API",
         version="0.6.0",
         docs_url="/api/docs",

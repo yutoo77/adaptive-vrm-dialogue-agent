@@ -149,15 +149,15 @@ adaptive-vrm-dialogue-agent/
 ## UIの情報設計
 
 - 主画面はAvatar、会話履歴、入力を常時表示する。
-- 返答スタイルは会話へ直接影響するためHeaderの小さなSelectへ置き、既定値を「自然」にする。送信中は変更を無効化し、どのStyleで送ったかをTurn途中で変えない。
+- 返答スタイルは会話へ直接影響するため入力欄の近くにSelectを置き、既定値を「自然に」にする。送信中は変更を無効化し、どのStyleで送ったかをTurn途中で変えない。
 - 生成中は同じ送信Buttonを`応答を停止`へ切り替え、別の停止Controlを増やさない。停止成功時はAssistant本文を追加せず、履歴と長期記憶へ保存していないことを短いNoticeで示す。
 - 正常な待機状態は重複表示せず、処理中、失敗、利用者の判断が必要な状態だけを会話の近くへ表示する。
-- 音声設定、長期記憶、演技調整、診断情報はNative `details`による段階的開示とし、Keyboard操作を保つ。
+- 音声設定、長期記憶、演技調整、診断情報はNative `dialog`内にまとめる。3つのTabと内部の`details`で段階的に開示し、Escape、Tab循環、開いたボタンへのFocus復帰を保つ。会話ログと入力は別領域なので、設定操作で位置や下書きをリセットしない。
 - Providerの送信範囲など、普段の操作を妨げる長文は短いLabelのTooltipと`aria-describedby`、READMEへ分ける。
 - 390px/319px幅でも会話入力を初期Viewport内へ残し、横Overflowを発生させないことをPlaywrightで確認する。
-- Stageの円窓、格子、水紋、浮遊片はCSSだけで描画し、外部画像Assetを読み込まない。
+- StageはCSSによる静かな月の円窓を残し、格子、水紋、浮遊片は外した。外部画像Assetは読み込まない。
 - `UIController.updateState()`が設定する`#app[data-state]`を環境色の唯一の入力とし、Avatarの状態所有を重複させない。
-- 環境Animationも`prefers-reduced-motion`で停止し、意味のある状態Textを装飾だけで置き換えない。
+- UIのAnimationやTransitionも`prefers-reduced-motion`で抑制し、意味のある状態Textを装飾だけで置き換えない。
 
 ## Dataと外部通信
 
@@ -202,12 +202,15 @@ adaptive-vrm-dialogue-agent/
 - VOICEVOXを最初のTTSに採用: API利用料とCloud送信を避け、Backend境界越しに交換可能にする。
 - faster-whisper `small` / CPU INT8を最初のSTTに採用: Browser固有の外部認識Serviceを避け、認識文を確認してから送信する。
 - WebGLRendererを採用: WebGPUより対応範囲が安定し、現在のMToon/VRM検証に十分。
+- FPSは`FrameRateMeter`で描画ループの実時間から計測し、アニメーション用の時間上限とは分離する。操作TestはGPU不要のまま、ローカルのテンポ評価は実rendererを記録するnew headless Chromiumで行う。[理由と計測結果](docs/evaluations/rendering-tempo-2026-09-06.md)
 - Agent Frameworkは未採用: 単発Text応答には過剰で、失敗箇所と費用を説明しにくい。
 - Runtime CDNは不使用: npm/pipでVersionを固定し、再現性とLicense確認をしやすくする。
 
 ## 現在の技術的Risk
 
-- production JavaScriptが約870kBで、低性能PCや初回Loadに影響する可能性がある。
+Local speechのHTTP clientは`VoicevoxSpeechProvider`内で遅延生成して共有し、FastAPIの終了処理で閉じる。文ごとに接続準備を繰り返さず、端末内の音声を環境Proxyへ流さない。評価用CLIなどでProviderを直接所有する場合も`finally`で`aclose()`する。少数の同一WAV比較では中央値594ms短縮したが、会話全体や描画負荷込みの改善保証ではない。[計測と再現手順](docs/evaluations/conversation-tempo-2026-09-05.md)
+
+- production JavaScriptが約885kBで、低性能PCや初回Loadに影響する可能性がある。
 - Pythonの間接依存を完全固定するlock fileがなく、将来のClean installで差が出る可能性がある。
 - 静的MarkupとDeveloper Panel描画は`UIController`から分離したが、対話、Memory、Model操作のEvent調整は同Classに残る。新しい主要画面を足す場合は領域別Controller化が必要。
 - OpenAIの固定`Safety Identifier`はローカル単一利用者用。公開時は個人情報を含まない利用者別識別子へ変える。

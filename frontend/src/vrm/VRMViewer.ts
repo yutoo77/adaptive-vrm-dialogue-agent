@@ -41,6 +41,7 @@ import {
 import { clampCameraSettings } from "../utils/math";
 import { getCharacterStatePreset } from "./CharacterStatePresets";
 import { CharacterController } from "./CharacterController";
+import { FrameRateMeter } from "./FrameRateMeter";
 import { GazeMotionController } from "./GazeMotionController";
 import { IdleMotionController } from "./IdleMotionController";
 import { PerformanceMotionController } from "./PerformanceMotionController";
@@ -67,6 +68,7 @@ export class VRMViewer {
   private readonly camera = new PerspectiveCamera(30, 1, 0.05, 100);
   private readonly renderer: WebGLRenderer;
   private readonly timer = new Timer();
+  private readonly frameRate = new FrameRateMeter();
   private readonly placeholder = new Group();
   private readonly lookAtTarget = new Object3D();
   private readonly controller: CharacterController;
@@ -82,8 +84,6 @@ export class VRMViewer {
   private animationFrameId: number | null = null;
   private loadGeneration = 0;
   private disposed = false;
-  private frameCount = 0;
-  private fpsElapsed = 0;
   private reducedMotionMode: ReducedMotionMode = "system";
   private emotionalContinuity: EmotionalContinuity | null = null;
 
@@ -93,6 +93,7 @@ export class VRMViewer {
   ) {
     this.renderer = this.createRenderer();
     this.timer.connect(document);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
     this.controller = new CharacterController({
       onStateChange: events.onStateChange,
       onExpressionChange: events.onExpressionChange,
@@ -229,6 +230,7 @@ export class VRMViewer {
     this.container.removeEventListener("pointermove", this.handlePointerMove);
     this.container.removeEventListener("pointerleave", this.handlePointerLeave);
     this.reducedMotionQuery.removeEventListener("change", this.handleReducedMotionChange);
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     this.controller.detachVRM();
     this.timer.dispose();
     if (this.currentVRM) disposeVRMModel(this.currentVRM);
@@ -427,6 +429,7 @@ export class VRMViewer {
   private start(): void {
     if (this.animationFrameId !== null || this.disposed) return;
     this.timer.reset();
+    this.frameRate.reset();
     const animate = (timestamp: number): void => {
       if (this.disposed) return;
       this.animationFrameId = requestAnimationFrame(animate);
@@ -447,19 +450,15 @@ export class VRMViewer {
       }
 
       this.renderer.render(this.scene, this.camera);
-      this.updateFps(delta);
+      const fps = this.frameRate.sample(timestamp);
+      if (fps !== null) this.events.onFps(fps);
     };
     this.animationFrameId = requestAnimationFrame(animate);
   }
 
-  private updateFps(delta: number): void {
-    this.frameCount += 1;
-    this.fpsElapsed += delta;
-    if (this.fpsElapsed < 0.75) return;
-    this.events.onFps(Math.round(this.frameCount / this.fpsElapsed));
-    this.frameCount = 0;
-    this.fpsElapsed = 0;
-  }
+  private readonly handleVisibilityChange = (): void => {
+    this.frameRate.reset();
+  };
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     const rect = this.container.getBoundingClientRect();
