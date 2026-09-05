@@ -69,6 +69,8 @@ The [rendering follow-up](evaluations/rendering-tempo-2026-09-06.md) measures re
 
 The [real-API follow-up](evaluations/real-api-tempo-2026-09-06.md) verifies three Backend-only Text/performance responses. It does not include browser playback. The 3–5 minute natural-conversation demo is still an acceptance target, not a completed test.
 
+Profile v1.1.0 has [a separate conversation-style evaluation](evaluations/conversation-style-2026-09-06.md): nine before/after cases and two identity refinements, without audio. For the next owner-approved OpenAI session, compare a short introduction, an ordinary explanation, good news, and a request to just listen. Check whether the words, voice and expression fit together; do not expect a gesture on every reply. Keep these live-model checks separate from the default free Mock demo and deterministic browser fixtures.
+
 | Problem | Recovery |
 | --- | --- |
 | VRM is missing | Continue with the 3D placeholder, then select a permitted `.vrm` file. |

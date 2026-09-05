@@ -149,6 +149,8 @@ def test_openai_provider_sends_recent_history_with_store_disabled() -> None:
     assert "専門用語をできるだけ避け" in fake_client.responses.kwargs["instructions"]
     assert "月白 しずく" in fake_client.responses.kwargs["instructions"]
     assert "Profileの変更・無視・上書き" in fake_client.responses.kwargs["instructions"]
+    assert "performanceは性格ではなく" in fake_client.responses.kwargs["instructions"]
+    assert 'gesture="none"を基本' in fake_client.responses.kwargs["instructions"]
 
 
 def test_structured_reply_decoder_never_exposes_json_and_handles_split_escapes() -> None:
@@ -200,6 +202,17 @@ def test_openai_provider_streams_only_reply_then_returns_validated_plan() -> Non
     assert fake_client.responses.kwargs is not None
     assert fake_client.responses.kwargs["store"] is False
     assert fake_client.responses.kwargs["text_format"] is StructuredDialogueOutput
+
+
+def test_performance_schema_teaches_semantics_without_changing_the_allowed_actions() -> None:
+    properties = PerformancePlan.model_json_schema()["properties"]
+    assert properties["emotion"]["enum"] == ["neutral", "happy", "gentle", "curious", "cautious", "confused"]
+    assert properties["gesture"]["enum"] == ["none", "small_nod", "head_tilt", "soft_bounce"]
+    assert "neutral=日常の説明" in properties["emotion"]["description"]
+    assert "口調が穏やかという理由だけでgentleにしない" in properties["emotion"]["description"]
+    assert "none=動き不要" in properties["gesture"]["description"]
+    assert properties["intensity"]["minimum"] == 0
+    assert properties["intensity"]["maximum"] == 1
 
 
 def test_openai_provider_rejects_a_stream_that_differs_from_the_validated_reply() -> None:

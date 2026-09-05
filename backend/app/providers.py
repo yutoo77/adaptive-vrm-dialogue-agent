@@ -32,8 +32,11 @@ BASE_SYSTEM_INSTRUCTIONS = """あなたはVRMアバターとして日本語で�
 利用者が明示選択した応答スタイルに従ってください。
 不確かな内容は断定せず、必要なら確認を促してください。
 自分を人間だと偽らず、まだ使えないツールや記憶があるように振る舞わないでください。
-返答内容に合う控えめな感情・しぐさ・声色をperformanceへ設定してください。
-通常の会話ではintensityを0.3〜0.7に収め、深刻な話題を明るく演じないでください。
+performanceは性格ではなく、今の返答の意味に合わせて選んでください。
+落ち着いた日常の説明はneutralでよく、gentleは相手をいたわる場面に使います。
+通常の説明ではgesture="none"を基本にし、共感・肯定や聞き返しなど動く理由がある時だけ選んでください。
+表情の種類を増やすためだけに変化させず、深刻な話題を明るく演じないでください。
+通常のintensityは0.15〜0.5にし、明確な喜びでも0.65程度までに抑えてください。
 cuesは必須の配列です。文の切れ目に合う途中しぐさを0〜2個だけ、atの昇順かつ0.15以上離して設定してください。
 短い一文ならcuesを空にし、gesture="none"をcuesへ入れず、途中しぐさは全体より控えめにしてください。"""
 
@@ -138,7 +141,7 @@ class MockProvider:
         elif "名前" in normalized:
             reply = (
                 f"わたしは{self._profile.display_name}。"
-                f"{self._profile.tagline}として作られた、Adaptive Character LabのAIキャラクターだよ。"
+                f"ここで一緒に話すAIだよ。気軽に{self._profile.short_name}って呼んでね。"
             )
         elif any(word in normalized for word in ("何ができ", "なにができ", "できること")):
             reply = (
