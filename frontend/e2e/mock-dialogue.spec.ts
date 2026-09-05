@@ -18,7 +18,8 @@ test("free Mock dialogue completes one browser round trip", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "月白 しずく" })).toBeVisible();
   await expect(page.locator("#character-version")).toHaveText("v1.0.0");
   await expect(page.locator("#character-tagline")).toHaveText("静かに寄り添い、考えをほどく案内役");
-  await expect(page.locator("#dialogue-provider")).toHaveText("ローカル");
+  await expect(page.locator("#dialogue-provider")).toHaveText("Mock");
+  await expect(page.locator("#dialogue-provider-note")).toHaveText("定型応答 · 外部送信なし");
 
   const input = page.getByRole("textbox", { name: "メッセージ" });
   await expect(input).toBeEnabled();
@@ -49,10 +50,10 @@ test("secondary controls stay behind progressive disclosure", async ({ page }) =
 
   await expect(page.locator(".stage-world")).toBeVisible();
   await expect(page.locator(".stage-moon")).toBeVisible();
-  const modelPicker = page.getByText("VRMファイルを選ぶ", { exact: true });
+  const modelPicker = page.locator("#settings-character .file-button");
   await expect(modelPicker).toBeHidden();
 
-  await page.getByText("キャラクターを調整", { exact: true }).click();
+  await page.getByRole("button", { name: "キャラクターを調整", exact: true }).click();
   await expect(modelPicker).toBeVisible();
   await expect(page.getByText("手動で状態を確認", { exact: true })).toBeVisible();
 
@@ -211,9 +212,9 @@ test("mobile keeps the conversation composer in the first viewport", async ({ pa
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   const environmentAnimationDurationMs = await page
-    .locator(".stage-mote-one")
+    .locator(".dialogue-form")
     .evaluate((element) => {
-      const duration = getComputedStyle(element).animationDuration;
+      const duration = getComputedStyle(element).transitionDuration;
       return duration.endsWith("ms") ? Number.parseFloat(duration) : Number.parseFloat(duration) * 1000;
     });
   expect(environmentAnimationDurationMs).toBeLessThanOrEqual(0.001);

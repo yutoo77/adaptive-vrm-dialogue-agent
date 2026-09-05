@@ -8,6 +8,8 @@ const backendPython = process.platform === "win32"
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  // Software-rendered VRM scenes are CPU-heavy; keep local/CI timing repeatable.
+  workers: 1,
   retries: isCI ? 1 : 0,
   reporter: isCI ? [["github"], ["html", { open: "never" }]] : "list",
   timeout: 60_000,
@@ -26,7 +28,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `${backendPython} -m uvicorn app.main:app --app-dir ../backend --host 127.0.0.1 --port 18000`,
+      command: `${backendPython} -m uvicorn e2e_server:create_app --factory --app-dir ../backend --host 127.0.0.1 --port 18000`,
       env: {
         DIALOGUE_PROVIDER: "mock",
         VOICEVOX_BASE_URL: "http://127.0.0.1:59999",

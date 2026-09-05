@@ -22,7 +22,8 @@ import type {
 import type { SpeechStatus } from "../speech/types";
 import type { MicrophoneOption, VoiceInputStatus } from "../transcription/types";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
-import { createAppMarkup, performanceEmotionLabel } from "./createAppMarkup";
+import { createAppMarkup, createEmptyDialogue, performanceEmotionLabel } from "./createAppMarkup";
+import { icon } from "./icons";
 import { renderDeveloperPanel } from "./renderDeveloperPanel";
 
 export type LatencyStage = "transcription" | "first-text" | "text-complete" | "speech-start";
@@ -109,6 +110,7 @@ export class UIController {
     const stageMessage = this.required("#stage-message");
 
     stageStatus.textContent = preset.label;
+    stageStatus.title = preset.message;
     stageStatus.dataset["tone"] = preset.tone;
     stageMessage.textContent = preset.message;
     this.root.dataset["state"] = state;
@@ -216,6 +218,9 @@ export class UIController {
     overlay.hidden = !loading;
     this.required<HTMLButtonElement>("#default-model-button").disabled = loading;
     this.required<HTMLInputElement>("#model-file").disabled = loading;
+    this.root.querySelectorAll<HTMLButtonElement>("[data-pick-model]").forEach((button) => {
+      button.disabled = loading;
+    });
 
     if (!loading) {
       bar.style.width = "0%";
@@ -281,6 +286,7 @@ export class UIController {
 
   public updateDialogueConnection(health: DialogueHealth | null, errorMessage?: string): void {
     const badge = this.required("#dialogue-provider");
+    const providerNote = this.required("#dialogue-provider-note");
     const note = this.required("#dialogue-privacy");
     this.dialogueReady = health?.status === "ready";
     this.dialogueProvider = health?.provider ?? "未接続";
@@ -293,19 +299,23 @@ export class UIController {
     if (!health) {
       badge.textContent = "オフライン";
       badge.dataset["status"] = "error";
+      providerNote.textContent = "対話サーバー未接続";
       note.textContent = "対話Backendが起動していません。VRM操作はそのまま利用できます。";
     } else if (health.status === "configuration_error") {
       badge.textContent = "設定エラー";
       badge.dataset["status"] = "error";
+      providerNote.textContent = "接続設定を確認してください";
       note.textContent = health.message;
     } else if (health.provider === "mock") {
-      badge.textContent = "ローカル";
+      badge.textContent = "Mock";
       badge.dataset["status"] = "mock";
+      providerNote.textContent = "定型応答 · 外部送信なし";
       note.textContent =
         "直近会話はRAM、明示登録した長期記憶だけは端末内SQLiteへ保存します。Mockでは外部送信しません。";
     } else {
       badge.textContent = "OpenAI";
       badge.dataset["status"] = "online";
+      providerNote.textContent = "会話をAPIへ送信";
       note.textContent =
         "OpenAIモードでは今回の入力、会話要約、関連する長期記憶をAPIへ送信します。VRMと音声は送信しません。";
     }
@@ -416,12 +426,9 @@ export class UIController {
 
   public resetDialogueConversation(): void {
     const log = this.required("#dialogue-log");
-    log.replaceChildren();
-    const empty = document.createElement("p");
-    empty.className = "dialogue-empty";
-    empty.textContent = "新しい会話を始めましょう";
-    log.append(empty);
+    log.innerHTML = createEmptyDialogue();
     this.required<HTMLTextAreaElement>("#dialogue-input").value = "";
+    this.resizeComposer();
     this.clearDialogueError();
     this.latencyMeasurements.transcription = null;
     this.latencyMeasurements["first-text"] = null;
@@ -448,7 +455,7 @@ export class UIController {
     const log = this.required("#dialogue-log");
     const submit = this.required<HTMLButtonElement>("#dialogue-submit");
     log.setAttribute("aria-busy", String(busy));
-    submit.textContent = busy ? "■" : "↑";
+    submit.innerHTML = icon(busy ? "stop" : "send");
     submit.dataset["mode"] = busy ? "cancel" : "send";
     submit.setAttribute("aria-label", busy ? "応答を停止" : "送信");
     submit.title = busy ? "応答を停止" : "送信";
@@ -465,6 +472,18 @@ export class UIController {
     container.dataset["speechState"] = status.state;
     message.textContent = status.message;
     message.title = status.message;
+    const summaries: Readonly<Record<SpeechStatus["state"], string>> = {
+      checking: "音声出力を確認しています…",
+      available: "音声を利用できます",
+      generating: "音声を準備しています…",
+      playing: "読み上げ中",
+      ready: "読み上げが終わりました",
+      stopped: "読み上げを停止しました",
+      unavailable: "音声出力は未接続です。文字で会話できます。",
+      error: "音声を再生できません。文字で会話できます。",
+    };
+    this.required("#speech-status-summary").textContent = summaries[status.state];
+    button.hidden = status.action === "none";
     button.textContent =
       status.action === "stop" ? "音声を停止" : status.action === "replay" ? "もう一度再生" : "音声待機";
     button.setAttribute(
@@ -488,6 +507,17 @@ export class UIController {
     container.dataset["voiceInputState"] = status.state;
     message.textContent = status.message;
     message.title = status.message;
+    const summaries: Readonly<Record<VoiceInputStatus["state"], string>> = {
+      checking: "音声入力を確認しています…",
+      idle: "マイクで話しかけられます",
+      unavailable: "音声入力は使えません。文字で入力できます。",
+      requesting: "マイクの許可を待っています…",
+      recording: "録音中 · マイクを押すと終了",
+      processing: "話した内容を文字にしています…",
+      ready: "認識した内容を入力欄で確認してください",
+      error: "音声入力に失敗しました。文字で入力できます。",
+    };
+    this.required("#voice-input-status-summary").textContent = summaries[status.state];
 
     const labels = {
       start: "音声で入力",
@@ -519,6 +549,7 @@ export class UIController {
   public setDialogueDraft(text: string): void {
     const input = this.required<HTMLTextAreaElement>("#dialogue-input");
     input.value = text;
+    this.resizeComposer();
     input.focus();
   }
 
@@ -562,6 +593,10 @@ export class UIController {
   private registerEvents(): void {
     const signal = this.abortController.signal;
     const input = this.required<HTMLInputElement>("#model-file");
+    this.registerSettingsEvents(signal);
+    this.root.querySelectorAll<HTMLButtonElement>("[data-pick-model]").forEach((button) => {
+      button.addEventListener("click", () => input.click(), { signal });
+    });
 
     input.addEventListener(
       "change",
@@ -626,6 +661,65 @@ export class UIController {
     this.registerExpressionEvents(signal);
     this.registerCameraEvents(signal);
     this.registerDropEvents(signal);
+  }
+
+  private registerSettingsEvents(signal: AbortSignal): void {
+    const dialog = this.required<HTMLDialogElement>("#settings-dialog");
+    const tabs = Array.from(this.root.querySelectorAll<HTMLButtonElement>("[data-settings-tab]"));
+    let opener: HTMLElement | null = null;
+    const selectTab = (name: string): void => {
+      tabs.forEach((tab) => {
+        const selected = tab.dataset["settingsTab"] === name;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        this.required(`#${tab.getAttribute("aria-controls")}`).hidden = !selected;
+      });
+      this.required(".settings-body").scrollTop = 0;
+    };
+    this.root.querySelectorAll<HTMLButtonElement>("[data-settings-target]").forEach((button) => {
+      button.addEventListener("click", () => {
+        opener = button;
+        selectTab(button.dataset["settingsTarget"] ?? "voice");
+        dialog.append(this.required("#toast"));
+        dialog.showModal();
+      }, { signal });
+    });
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => selectTab(tab.dataset["settingsTab"] ?? "voice"), { signal });
+      tab.addEventListener("keydown", (event) => {
+        const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+          : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+            : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+        if (next === null) return;
+        event.preventDefault();
+        const nextTab = tabs[next];
+        if (!nextTab) return;
+        selectTab(nextTab.dataset["settingsTab"] ?? "voice");
+        nextTab.focus();
+      }, { signal });
+    });
+    this.required("#settings-close").addEventListener("click", () => dialog.close(), { signal });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        "button, input, select, textarea, summary, [tabindex], a[href]",
+      )).filter((element) => element.tabIndex >= 0
+        && !element.matches(":disabled") && element.getClientRects().length > 0);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      // Keep Tab at the dialog boundary instead of moving to browser chrome.
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }, { signal });
+    dialog.addEventListener("close", () => {
+      this.required(".app-shell").append(this.required("#toast"));
+      opener?.focus();
+    }, { signal });
   }
 
   private registerPerformancePreviewEvents(signal: AbortSignal): void {
@@ -706,10 +800,14 @@ export class UIController {
           return;
         }
         const message = input.value;
-        if (this.actions?.sendMessage(message)) input.value = "";
+        if (this.actions?.sendMessage(message)) {
+          input.value = "";
+          this.resizeComposer();
+        }
       },
       { signal },
     );
+    input.addEventListener("input", () => this.resizeComposer(), { signal });
     input.addEventListener(
       "keydown",
       (event) => {
@@ -720,6 +818,12 @@ export class UIController {
       },
       { signal },
     );
+  }
+
+  private resizeComposer(): void {
+    const input = this.required<HTMLTextAreaElement>("#dialogue-input");
+    input.style.height = "auto";
+    input.style.height = `${Math.min(128, input.scrollHeight)}px`;
   }
 
   private registerPersistentMemoryEvents(signal: AbortSignal): void {
@@ -902,7 +1006,7 @@ export class UIController {
 
   private formatLatencySummary(): string {
     const values = this.latencyMeasurements;
-    return `認識 ${formatLatency(values.transcription)} / 初文 ${formatLatency(values["first-text"])} / `
+    return `認識 ${formatLatency(values.transcription)} / 初字 ${formatLatency(values["first-text"])} / `
       + `本文 ${formatLatency(values["text-complete"])} / 発話 ${formatLatency(values["speech-start"])}`;
   }
 

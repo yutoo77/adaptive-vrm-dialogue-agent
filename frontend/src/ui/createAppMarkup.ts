@@ -8,6 +8,15 @@ import {
   type PerformanceGesture,
 } from "../types/character";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
+import { icon } from "./icons";
+
+export function createEmptyDialogue(): string {
+  return `<div class="dialogue-empty">
+    <span class="empty-conversation-mark" aria-hidden="true">${icon("conversation")}</span>
+    <h3>何から話そう？</h3>
+    <p>今日のことでも、気になっていることでも。</p>
+  </div>`;
+}
 
 export function createAppMarkup(): string {
   const stateButtons = CHARACTER_STATES.map((state) => {
@@ -26,11 +35,13 @@ export function createAppMarkup(): string {
           <div class="brand-copy">
             <div class="brand-title-row">
               <h1 id="character-name">Adaptive Character</h1>
-              <small id="character-version" class="character-version" hidden></small>
             </div>
             <p id="character-tagline" hidden></p>
           </div>
         </div>
+        <button id="settings-open" class="quiet-button" type="button" data-settings-target="voice" aria-haspopup="dialog">
+          ${icon("settings")}<span>設定</span>
+        </button>
       </header>
 
       <main class="workspace">
@@ -38,22 +49,14 @@ export function createAppMarkup(): string {
           <div id="character-viewport" class="character-viewport" tabindex="0">
             <div class="stage-surface" aria-hidden="true"></div>
             <div class="stage-world" aria-hidden="true">
-              <span class="stage-lattice stage-lattice-left"></span>
-              <span class="stage-lattice stage-lattice-right"></span>
               <span class="stage-moon"></span>
-              <span class="stage-ripple stage-ripple-far"></span>
-              <span class="stage-ripple stage-ripple-near"></span>
-              <span class="stage-mote stage-mote-one"></span>
-              <span class="stage-mote stage-mote-two"></span>
-              <span class="stage-mote stage-mote-three"></span>
-              <span class="stage-mote stage-mote-four"></span>
-            </div>
-            <div class="stage-topbar">
-              <strong id="model-status" class="model-badge" data-status="empty">モデル確認中</strong>
             </div>
             <div id="empty-guide" class="empty-guide">
+              ${icon("avatar")}
               <strong>キャラクターを追加</strong>
-              <p>VRMファイルをここへドロップ</p>
+              <p>VRMファイルをドロップするか、選んでください。</p>
+              <button class="primary-button" type="button" data-pick-model>VRMファイルを選ぶ</button>
+              <small>端末内だけで表示します · 最大200MB</small>
             </div>
             <div id="loading-overlay" class="loading-overlay" hidden>
               <div class="loading-card">
@@ -66,47 +69,53 @@ export function createAppMarkup(): string {
               <strong>3D表示を開始できませんでした</strong>
               <p id="fatal-message"></p>
             </div>
-            <div class="stage-state-card">
-              <span id="stage-state" class="stage-state"></span>
-              <p id="stage-message"></p>
-            </div>
-            <span id="motion-status" class="motion-badge" hidden>動きを抑えています</span>
             <div class="drop-hint" aria-hidden="true">ここへドロップ</div>
           </div>
           <div class="viewer-footer">
-            <span class="privacy-mark" aria-hidden="true">✓</span>
-            <p title="モデルは端末内だけで表示され、外部へ送信されません">端末内表示</p>
+            <div class="stage-state-card" role="status">
+              <span id="stage-state" class="stage-state"></span>
+              <p id="stage-message" class="visually-hidden"></p>
+            </div>
+            <div id="performance-status" class="performance-status" data-emotion="neutral" aria-live="polite" hidden>
+              <span id="performance-source">反応</span>
+              <strong id="performance-emotion">自然</strong>
+              <small id="performance-detail"></small>
+            </div>
+            <button class="quiet-button stage-settings-button" type="button" data-settings-target="character" aria-label="キャラクターを調整" aria-haspopup="dialog">
+              ${icon("sliders")}<span>表示を調整</span>
+            </button>
           </div>
         </section>
 
-        <aside class="control-panel" aria-label="キャラクター操作">
+        <section class="control-panel" aria-label="会話と入力">
           <section class="dialogue-section">
             <div class="conversation-header">
-              <h2 id="conversation-title">会話</h2>
+              <div class="conversation-heading">
+                <h2 id="conversation-title">会話</h2>
+                <p class="connection-status"><small id="dialogue-provider" class="dialogue-provider" data-status="offline" aria-describedby="dialogue-privacy">確認中</small><span id="dialogue-provider-note"></span></p>
+              </div>
               <div class="conversation-actions">
-                <small id="dialogue-provider" class="dialogue-provider" data-status="offline" aria-describedby="dialogue-privacy">確認中</small>
-                <label class="response-style-control" for="response-style-select">
-                  <span>返し方</span>
-                  <select id="response-style-select" aria-label="返答の詳しさ" title="次の返答の詳しさを選択">
-                    <option value="concise">短く</option>
-                    <option value="balanced" selected>自然</option>
-                    <option value="detailed">詳しく</option>
-                    <option value="beginner">やさしく</option>
-                  </select>
-                </label>
-                <button id="conversation-reset" class="conversation-reset" type="button" aria-label="新しい会話" title="新しい会話" disabled>
-                  <span aria-hidden="true">↻</span><span class="conversation-reset-label">新しい会話</span>
+                <button id="conversation-reset" class="conversation-reset quiet-button" type="button" aria-label="新しい会話" title="新しい会話" disabled>
+                  ${icon("newConversation")}<span class="conversation-reset-label">新しい会話</span>
                 </button>
               </div>
             </div>
             <span id="dialogue-memory" hidden>直近 0 / 10往復（RAM）</span>
-            <div id="performance-status" class="performance-status" data-emotion="neutral" aria-live="polite" hidden>
-              <span id="performance-source">自動演技</span>
-              <strong id="performance-emotion">自然</strong>
-              <small id="performance-detail"></small>
+            <div id="dialogue-log" class="dialogue-log" role="log" aria-label="会話履歴" aria-live="polite" aria-busy="false" tabindex="0">
+              ${createEmptyDialogue()}
             </div>
-            <div id="dialogue-log" class="dialogue-log" role="log" aria-live="polite" aria-busy="false">
-              <p class="dialogue-empty">ここから会話を始めましょう</p>
+            <div class="composer">
+            <div class="composer-tools">
+              <label class="response-style-control" for="response-style-select">
+                <span>返答</span>
+                <select id="response-style-select" aria-label="返答の詳しさ" title="次の返答の詳しさを選択">
+                  <option value="concise">短く</option>
+                  <option value="balanced" selected>自然に</option>
+                  <option value="detailed">詳しく</option>
+                  <option value="beginner">やさしく</option>
+                </select>
+              </label>
+              <button id="speech-control" class="speech-control quiet-button" type="button" disabled hidden>音声待機</button>
             </div>
             <form id="dialogue-form" class="dialogue-form">
               <label class="visually-hidden" for="dialogue-input">メッセージ</label>
@@ -115,29 +124,48 @@ export function createAppMarkup(): string {
                 class="dialogue-input"
                 rows="1"
                 maxlength="1000"
-                placeholder="話しかけてみて…"
+                placeholder="メッセージを入力…"
+                aria-describedby="composer-hint"
                 disabled
               ></textarea>
               <button id="voice-input-control" class="voice-input-button" type="button" aria-label="音声入力は現在利用できません" title="音声入力は現在利用できません" disabled>
-                <span class="voice-input-icon" aria-hidden="true"></span>
+                ${icon("microphone")}
               </button>
-              <button id="dialogue-submit" class="send-button" type="submit" data-mode="send" aria-label="送信" title="送信" disabled><span aria-hidden="true">↑</span></button>
+              <button id="dialogue-submit" class="send-button" type="submit" data-mode="send" aria-label="送信" title="送信" disabled>${icon("send")}</button>
             </form>
+            <p id="composer-hint" class="composer-hint">Enterで送信<span aria-hidden="true"> · </span>Shift + Enterで改行</p>
             <p id="dialogue-error" class="dialogue-error" role="alert" hidden></p>
-            <div id="voice-input-status" class="voice-input-status" data-voice-input-state="checking">
+            <div id="voice-input-status" class="voice-input-status" data-voice-input-state="checking" role="status">
               <span class="voice-input-status-dot" aria-hidden="true"></span>
-              <p id="voice-input-status-message">音声入力を確認しています</p>
+              <p id="voice-input-status-summary">音声入力を確認しています</p>
+              <button class="status-detail-button" type="button" data-settings-target="voice" aria-label="音声入力の詳細" aria-haspopup="dialog">詳細</button>
             </div>
-            <div id="speech-status" class="speech-status" data-speech-state="checking">
+            <div id="speech-status" class="speech-status" data-speech-state="checking" role="status">
               <span class="speech-status-dot" aria-hidden="true"></span>
-              <p id="speech-status-message">音声出力を確認しています</p>
-              <button id="speech-control" class="speech-control" type="button" disabled>音声待機</button>
+              <p id="speech-status-summary">音声出力を確認しています</p>
+              <button class="status-detail-button" type="button" data-settings-target="voice" aria-label="音声出力の詳細" aria-haspopup="dialog">詳細</button>
             </div>
+            </div>
+          </section>
+        </section>
+      </main>
 
-            <div class="conversation-tools">
-              <details id="voice-tools" class="conversation-tool-panel">
-                <summary>音声設定</summary>
+      <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+        <header class="settings-header">
+          <h2 id="settings-title">設定</h2>
+          <button id="settings-close" class="icon-button" type="button" aria-label="設定を閉じる" autofocus>${icon("close")}</button>
+        </header>
+        <div class="settings-tabs" role="tablist" aria-label="設定の種類">
+          <button id="settings-tab-voice" type="button" role="tab" data-settings-tab="voice" aria-controls="settings-voice" aria-selected="true">${icon("audio")}音声</button>
+          <button id="settings-tab-memory" type="button" role="tab" data-settings-tab="memory" aria-controls="settings-memory" aria-selected="false" tabindex="-1">${icon("memory")}記憶</button>
+          <button id="settings-tab-character" type="button" role="tab" data-settings-tab="character" aria-controls="settings-character" aria-selected="false" tabindex="-1">${icon("avatar")}キャラクター</button>
+        </div>
+        <div class="settings-body">
+          <section id="settings-voice" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-voice" tabindex="0">
+              <details id="voice-tools" class="conversation-tool-panel" open>
+                <summary>音声入力</summary>
                 <div class="conversation-tool-content">
+                  <p id="voice-input-status-message" class="settings-status-message">音声入力を確認しています</p>
                   <label class="microphone-select-row" for="microphone-select">
                     <span>入力マイク</span>
                     <select id="microphone-select" aria-label="入力に使うマイク" disabled>
@@ -151,8 +179,18 @@ export function createAppMarkup(): string {
                 </div>
               </details>
 
-              <details class="conversation-tool-panel persistent-memory-panel">
-                <summary><span>記憶</span><small id="persistent-memory-count">0件</small></summary>
+              <section class="settings-section">
+                <h3>音声出力</h3>
+                <p id="speech-status-message" class="settings-status-message">音声出力を確認しています</p>
+              </section>
+              <section class="settings-section connection-note">
+                <h3>接続とデータ</h3>
+                <p id="dialogue-privacy">Backendへの接続を確認しています。</p>
+              </section>
+          </section>
+          <section id="settings-memory" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-memory" tabindex="0" hidden>
+              <details class="conversation-tool-panel persistent-memory-panel" open>
+                <summary><span>保存した記憶</span><small id="persistent-memory-count">0件</small></summary>
                 <div class="persistent-memory-content">
                   <p class="persistent-memory-note">明示して追加した内容だけを端末内に保存します。</p>
                   <form id="persistent-memory-form" class="persistent-memory-form">
@@ -169,22 +207,23 @@ export function createAppMarkup(): string {
                   </div>
                 </div>
               </details>
-            </div>
-            <p id="dialogue-privacy" hidden>Backendへの接続を確認しています。</p>
           </section>
 
-          <details class="advanced-panel">
-            <summary><span>キャラクターを調整</span><small>モデル・表情・カメラ</small></summary>
+          <section id="settings-character" class="settings-page" role="tabpanel" aria-labelledby="settings-tab-character" tabindex="0" hidden>
+          <details class="advanced-panel" open>
+            <summary><span>モデルと動き</span></summary>
             <div class="advanced-content">
               <section class="tool-section model-section">
                 <div class="tool-heading"><h3>モデル</h3></div>
-                <label class="file-button" for="model-file">
-                  <span class="file-button-icon" aria-hidden="true">＋</span>
+                <strong id="model-status" class="model-badge" data-status="empty">モデル確認中</strong>
+                <button class="file-button" type="button" data-pick-model>
+                  ${icon("upload")}
                   <span><strong>VRMファイルを選ぶ</strong><small>.vrm / 最大200MB</small></span>
-                </label>
+                </button>
                 <input id="model-file" type="file" accept=".vrm,model/gltf-binary" hidden />
                 <button id="default-model-button" class="secondary-button" type="button">既定モデルを読み込む</button>
                 <p class="path-note"><code>public/models/private/character.vrm</code></p>
+                <p class="settings-status-message">VRMは端末内だけで表示し、外部へ送信しません。</p>
               </section>
 
               <section class="tool-section state-section">
@@ -224,6 +263,7 @@ export function createAppMarkup(): string {
                     </select>
                   </label>
                   <p id="performance-preview-status" class="performance-preview-status" aria-live="polite">中 60%・OS設定に従う</p>
+                  <span id="motion-status" class="motion-badge" hidden>動きを抑えています</span>
                   <div class="performance-preview-actions">
                     <button id="performance-preview-play" class="secondary-button" type="button">再生</button>
                     <button id="performance-preview-reset" class="text-button" type="button">自動へ戻す</button>
@@ -260,11 +300,12 @@ export function createAppMarkup(): string {
               <details class="inner-tool-panel developer-section">
                 <summary>診断情報</summary>
                 <div class="inner-tool-content">
+                  <p class="settings-status-message">キャラクター定義 <span id="character-version" class="character-version" hidden></span></p>
                   <div class="latency-summary" aria-label="直近の処理時間">
                     <span>処理時間</span>
                     <dl>
                       <div><dt>認識</dt><dd id="latency-transcription">—</dd></div>
-                      <div><dt>初文</dt><dd id="latency-first-text">—</dd></div>
+                      <div><dt>初字</dt><dd id="latency-first-text">—</dd></div>
                       <div><dt>本文</dt><dd id="latency-text-complete">—</dd></div>
                       <div><dt>発話</dt><dd id="latency-speech-start">—</dd></div>
                     </dl>
@@ -274,8 +315,9 @@ export function createAppMarkup(): string {
               </details>
             </div>
           </details>
-        </aside>
-      </main>
+          </section>
+        </div>
+      </dialog>
       <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     </div>`;
 }
