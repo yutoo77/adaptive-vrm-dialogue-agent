@@ -70,6 +70,10 @@ Profileの口調は短い会話例で示し、毎回の自己紹介・質問・�
 
 ## 主要な処理の流れ
 
+音声設定は会話Contextとは独立している。Frontendは設定画面を開く時に`GET /api/speech/voices`で実際の話者・スタイルとBackendの既定を取得する。ブラウザに保存するのは話者ID・速さ・高さ・抑揚のみ。発話開始時の設定をコピーし、文単位Streamingでも同じ返答は同じ設定で合成する。`POST /api/speech`の任意の`voice`フィールドをBackendで検証し、VOICEVOXのAudioQueryへ適用する。共有Providerの既定値やVOICEVOX全体の設定・辞書は変更しない。歌唱専用のStyleは候補から除外する。
+
+読み補正は音声合成へ渡す文字列だけに適用する。現在は再現できた「忙しかった分 → 忙しかったぶん」の限定的な置換であり、会話本文や保存する記憶を変更しない。汎用の漢字読み推定や利用者辞書は未実装。
+
 1. `UIController`がTextと明示選択した4種類の返答スタイルを受け取り、空文字・1000文字超・処理中の再送を防ぐ。
 2. `DialogueController`が利用者発話を表示し、Avatarを`thinking`へ変える。
 3. `DialogueClient`が画面内で生成した`session_id`、本文、`response_style`を`POST /api/dialogue/stream`へ送り、`application/x-ndjson`の`start -> text_delta* -> complete | error`を検証する。35秒でClient Timeoutにし、生成中の送信Buttonは`応答を停止`へ変わり、操作時は`DELETE /api/dialogue/sessions/{session_id}/active`を送る。

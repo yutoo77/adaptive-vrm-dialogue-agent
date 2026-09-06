@@ -31,6 +31,8 @@ VOICEVOX is optional local software and is not bundled. When the default speaker
 
 Consult both the [VOICEVOX software terms](https://voicevox.hiroshiba.jp/term/) and the [VOICEVOX:冥鳴ひまり terms](https://www.meimeihimari.com/terms-of-use) before publishing generated audio. The local verification record is in [docs/voice-license-record.md](docs/voice-license-record.md).
 
+The voice settings panel can select other locally installed speaking voices and displays the selected voice's credit. This does not grant permission to publish every voice library: consult the selected library's own terms before publishing its generated audio. No voice libraries or generated previews are bundled by this feature.
+
 ## VRM model and screenshots
 
 The `AvatarSample_A` VRM used for local verification is not bundled. The public screenshot in `docs/assets/demo-overview.jpg` shows that sample model. Its official conditions permit using images and videos of the sample model and do not require attribution; attribution is included voluntarily:

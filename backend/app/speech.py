@@ -12,6 +12,7 @@ import httpx
 
 from app.character_profile import DEFAULT_CHARACTER_PROFILE, CharacterProfile
 from app.config import Settings
+from app.voice_settings import VoiceCatalog, VoiceOption, VoiceSettings, prepare_speech_text
 
 SpeechProviderName = Literal["voicevox"]
 SpeechViseme = Literal["a", "i", "u", "e", "o"]
@@ -63,7 +64,11 @@ class SpeechProvider(Protocol):
 
     async def check_health(self) -> SpeechHealth: ...
 
-    async def synthesize(self, text: str, request_id: str) -> SpeechSynthesisResult: ...
+    async def list_voices(self) -> VoiceCatalog: ...
+
+    async def synthesize(
+        self, text: str, request_id: str, voice: VoiceSettings | None = None,
+    ) -> SpeechSynthesisResult: ...
 
 
 class VoicevoxSpeechProvider:
@@ -81,6 +86,7 @@ class VoicevoxSpeechProvider:
         self._transport = transport
         self._voice_profile = profile.voice
         self._client: httpx.AsyncClient | None = None
+        self._voices: list[VoiceOption] | None = None
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[httpx.AsyncClient]:
@@ -135,25 +141,79 @@ class VoicevoxSpeechProvider:
             credit=f"VOICEVOX:{speaker_name}" if speaker_name else None,
         )
 
-    async def synthesize(self, text: str, request_id: str) -> SpeechSynthesisResult:
+    async def list_voices(self) -> VoiceCatalog:
+        try:
+            async with self._connection() as client:
+                response = await client.get("/speakers")
+                response.raise_for_status()
+                payload = response.json()
+            if not isinstance(payload, list):
+                raise ValueError("Invalid voice catalog")
+            voices: dict[int, VoiceOption] = {}
+            for speaker in payload:
+                if not isinstance(speaker, dict) or not isinstance(speaker.get("name"), str):
+                    continue
+                styles = speaker.get("styles")
+                if not isinstance(styles, list):
+                    continue
+                for style in styles:
+                    if not isinstance(style, dict) or style.get("type", "talk") != "talk":
+                        continue
+                    voice_id = style.get("id")
+                    if type(voice_id) is not int or not 0 <= voice_id <= 100000:
+                        continue
+                    if not isinstance(style.get("name"), str):
+                        continue
+                    voices[voice_id] = VoiceOption(
+                        id=voice_id, name=speaker["name"], style=style["name"], credit=f"VOICEVOX:{speaker['name']}",
+                    )
+            if not voices:
+                raise ValueError("No installed speaking voices")
+        except (httpx.HTTPError, ValueError, TypeError) as error:
+            self._voices = None
+            raise SpeechProviderError(
+                503, "voice_catalog_unavailable", "声の一覧を取得できません。VOICEVOXを起動して再接続してください。",
+            ) from error
+        self._voices = list(voices.values())
+        return VoiceCatalog(
+            defaults=VoiceSettings(
+                speaker_id=self.speaker_id, speed_scale=self._voice_profile.speed_scale,
+                pitch_scale=self._voice_profile.pitch_scale, intonation_scale=self._voice_profile.intonation_scale,
+            ),
+            voices=self._voices,
+        )
+
+    async def synthesize(
+        self, text: str, request_id: str, voice: VoiceSettings | None = None,
+    ) -> SpeechSynthesisResult:
+        if voice is not None:
+            if self._voices is None:
+                await self.list_voices()
+            if not any(option.id == voice.speaker_id for option in self._voices or []):
+                raise SpeechProviderError(
+                    422, "unknown_voice", "選んだ声は利用できません。声の一覧を再接続してください。",
+                )
+        speaker_id = voice.speaker_id if voice else self.speaker_id
         try:
             async with self._connection() as client:
                 query_response = await client.post(
                     "/audio_query",
-                    params={"text": text, "speaker": self.speaker_id},
+                    params={"text": prepare_speech_text(text), "speaker": speaker_id},
                     headers={"X-Client-Request-Id": request_id},
                 )
                 query_response.raise_for_status()
                 audio_query = query_response.json()
                 if not isinstance(audio_query, dict):
                     raise ValueError("VOICEVOX returned an invalid audio query.")
-                audio_query["speedScale"] = self._voice_profile.speed_scale
-                audio_query["pitchScale"] = self._voice_profile.pitch_scale
-                audio_query["intonationScale"] = self._voice_profile.intonation_scale
+                audio_query["speedScale"] = voice.speed_scale if voice else self._voice_profile.speed_scale
+                audio_query["pitchScale"] = voice.pitch_scale if voice else self._voice_profile.pitch_scale
+                audio_query["intonationScale"] = (
+                    voice.intonation_scale if voice else self._voice_profile.intonation_scale
+                )
 
                 audio_response = await client.post(
                     "/synthesis",
-                    params={"speaker": self.speaker_id},
+                    params={"speaker": speaker_id},
                     json=audio_query,
                     headers={"Accept": "audio/wav", "X-Client-Request-Id": request_id},
                 )
