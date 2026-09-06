@@ -240,7 +240,11 @@ $env:VOICEVOX_SPEAKER_ID = "14"
 .\start_demo.ps1
 ```
 
-Character Profileの既定は冥鳴ひまり（ノーマル / ID 14）、話速`0.96`、音高`-0.01`、抑揚`0.94`です。`VOICEVOX_SPEAKER_ID`で話者だけ上書きできますが、Profileとの印象は利用者自身で再確認してください。公開した生成音声には`VOICEVOX:冥鳴ひまり`のクレジットが必要です。VOICEVOXが停止している場合もText対話は利用できます。
+Character Profileの既定は冥鳴ひまり（ノーマル / ID 14）、話速`0.96`、音高`-0.01`、抑揚`0.94`です。**設定 → 音声 → 音声出力**で、インストール済みの声・スタイル、速さ、高さ、抑揚を変更し、「声を試す」で短い固定文を試聴できます。試聴は会話APIや会話履歴を使いません。
+
+選択はこのブラウザの`localStorage`に保存し、次の発話から適用します。発話途中に変更しても、その返答の途中で声は切り替わりません。「しずくの標準に戻す」でBackendの既定へ戻せます。`VOICEVOX_SPEAKER_ID`は既定の話者を変える環境変数で、ブラウザに保存した選択があればそちらを優先します。VOICEVOXを後から起動した場合は「再接続」で一覧を取得します。
+
+生成音声を公開するときは、設定欄のクレジットと、選んだ音声ライブラリの利用条件を確認してください。既定の声は`VOICEVOX:冥鳴ひまり`です。声の調整には新しいソフトウェアや課金APIは不要です。声を変えた際のキャラクターとの印象は利用者自身で再確認してください。VOICEVOXが停止していてもText対話は利用できます。
 
 ### Push-to-Talk音声入力
 
@@ -340,6 +344,7 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 
 ## Evaluation
 
+- [声のカスタマイズ / 誤読の再現・音声入力の待ち時間](docs/evaluations/voice-settings-2026-09-06.md)
 - [会話の口調と演技選択 / 改善前後9件ずつ・自己紹介の追加2件](docs/evaluations/conversation-style-2026-09-06.md)
 - [実API対話の再確認 / Textと演技データ3件・残る体験評価](docs/evaluations/real-api-tempo-2026-09-06.md)
 - [描画環境と会話テンポ / GPU実測とFPS計測の修正](docs/evaluations/rendering-tempo-2026-09-06.md)

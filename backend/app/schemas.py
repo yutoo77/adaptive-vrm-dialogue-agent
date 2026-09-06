@@ -8,6 +8,7 @@ from app.character_profile import CharacterProfile
 from app.continuity import EmotionalContinuity
 from app.interaction import ResponseStyle
 from app.performance import PerformancePlan
+from app.voice_settings import VoiceSettings
 
 
 class DialogueRequest(BaseModel):
@@ -22,6 +23,7 @@ class SpeechRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     text: str = Field(min_length=1, max_length=1000)
+    voice: VoiceSettings | None = None
 
 
 class DialogueResponse(BaseModel):

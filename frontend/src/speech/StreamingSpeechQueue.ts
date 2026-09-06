@@ -10,7 +10,7 @@ import type {
   SpeechGateway,
 } from "./SpeechController";
 import { StreamingSpeechSegmenter } from "./StreamingSpeechSegmenter";
-import type { SpeechStatus, SpeechTiming } from "./types";
+import type { SpeechStatus, SpeechTiming, VoiceSettings } from "./types";
 
 interface PreparedSpeechSegment {
   readonly text: string;
@@ -19,6 +19,7 @@ interface PreparedSpeechSegment {
 }
 
 interface StreamingSpeechSession {
+  readonly voice: VoiceSettings | undefined;
   readonly operationId: number;
   readonly segmenter: StreamingSpeechSegmenter;
   readonly startedAt: number;
@@ -39,7 +40,7 @@ interface StreamingSpeechSession {
 
 export type StreamingSpeechCompletion =
   | { readonly handled: true }
-  | { readonly handled: false; readonly onStarted?: () => void };
+  | { readonly handled: false; readonly voice: VoiceSettings | undefined; readonly onStarted?: () => void };
 
 export class StreamingSpeechQueue {
   private operationId = 0;
@@ -61,13 +62,14 @@ export class StreamingSpeechQueue {
     private readonly objectUrls: ObjectUrlApi,
   ) {}
 
-  public begin(onStarted?: () => void): void {
+  public begin(onStarted?: () => void, voice?: VoiceSettings): void {
     this.cancelActive(false);
     this.replaySegments = [];
     this.latestText = "";
     this.latestPerformance = null;
     const operationId = ++this.operationId;
     this.session = {
+      voice: voice ? { ...voice } : undefined,
       operationId,
       segmenter: new StreamingSpeechSegmenter(),
       startedAt: performance.now(),
@@ -104,7 +106,7 @@ export class StreamingSpeechQueue {
         "途中表示と確定した本文が一致しなかったため、先行音声を破棄して確定本文を再生成します。",
       );
       this.discard();
-      return onStarted ? { handled: false, onStarted } : { handled: false };
+      return onStarted ? { handled: false, voice: session.voice, onStarted } : { handled: false, voice: session.voice };
     }
 
     session.finalized = true;
@@ -150,7 +152,7 @@ export class StreamingSpeechQueue {
       const controller = new AbortController();
       this.requestController = controller;
       try {
-        const result = await this.gateway.synthesize(text, controller.signal);
+        const result = await this.gateway.synthesize(text, controller.signal, session.voice);
         if (!this.isCurrent(session) || controller.signal.aborted) return null;
         const prepared = { text, audio: result.audio, timing: result.timing };
         this.replaySegments.push(prepared);

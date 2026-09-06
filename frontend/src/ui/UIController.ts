@@ -41,6 +41,7 @@ export interface UIActions {
   readonly clearPersistentMemories: () => boolean;
   readonly refreshPersistentMemories: () => boolean;
   readonly toggleSpeech: () => void;
+  readonly loadVoices: () => void;
   readonly toggleVoiceInput: () => void;
   readonly selectMicrophone: (deviceId: string) => void;
   readonly setVoiceAutoStop: (enabled: boolean) => void;
@@ -470,7 +471,7 @@ export class UIController {
     const message = this.required("#speech-status-message");
     const button = this.required<HTMLButtonElement>("#speech-control");
     container.dataset["speechState"] = status.state;
-    message.textContent = status.message;
+    message.textContent = status.state === "available" ? "音声出力は接続済みです。" : status.message;
     message.title = status.message;
     const summaries: Readonly<Record<SpeechStatus["state"], string>> = {
       checking: "音声出力を確認しています…",
@@ -668,6 +669,7 @@ export class UIController {
     const tabs = Array.from(this.root.querySelectorAll<HTMLButtonElement>("[data-settings-tab]"));
     let opener: HTMLElement | null = null;
     const selectTab = (name: string): void => {
+      if (name === "voice") this.actions?.loadVoices();
       tabs.forEach((tab) => {
         const selected = tab.dataset["settingsTab"] === name;
         tab.setAttribute("aria-selected", String(selected));

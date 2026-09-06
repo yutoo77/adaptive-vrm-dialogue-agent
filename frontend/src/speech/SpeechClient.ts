@@ -1,4 +1,6 @@
 import { SPEECH_VISEMES, type SpeechHealth, type SpeechSynthesisResult, type SpeechTiming } from "./types";
+import type { VoiceCatalog, VoiceSettings } from "./types";
+import { isVoiceCatalog } from "./voicePreferences";
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -31,13 +33,21 @@ export class SpeechClient {
     return payload;
   }
 
-  public async synthesize(text: string, signal?: AbortSignal): Promise<SpeechSynthesisResult> {
+  public async getVoices(signal?: AbortSignal): Promise<VoiceCatalog> {
+    const response = await this.fetchWithTimeout("/speech/voices", { method: "GET" }, signal, 5_000);
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw createSpeechApiError(response.status, payload);
+    if (!isVoiceCatalog(payload)) throw new SpeechApiError("声の一覧を読み込めませんでした。");
+    return payload;
+  }
+
+  public async synthesize(text: string, signal?: AbortSignal, voice?: VoiceSettings): Promise<SpeechSynthesisResult> {
     const response = await this.fetchWithTimeout(
       "/speech",
       {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "audio/wav" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voice }),
       },
       signal,
       this.timeoutMs,

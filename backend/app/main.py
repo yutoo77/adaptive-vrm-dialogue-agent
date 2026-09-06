@@ -60,6 +60,7 @@ from app.transcription import (
     TranscriptionProviderError,
     build_transcription_provider,
 )
+from app.voice_settings import VoiceCatalog
 
 logger = logging.getLogger("adaptive_vrm.dialogue")
 MAX_TRANSCRIPTION_BYTES = 4 * 1024 * 1024
@@ -644,19 +645,32 @@ def create_app(
             message=health_result.message,
         )
 
+    @app.get("/api/speech/voices", response_model=VoiceCatalog)
+    async def speech_voices() -> VoiceCatalog:
+        try:
+            return await resolved_speech_provider.list_voices()
+        except SpeechProviderError as error:
+            raise HTTPException(
+                status_code=error.status_code, detail={"code": error.code, "message": error.public_message},
+            ) from error
+
     @app.post("/api/speech")
     async def speech(request: SpeechRequest) -> Response:
         request_id = uuid4().hex
         started_at = perf_counter()
+        speaker_id = request.voice.speaker_id if request.voice else resolved_speech_provider.speaker_id
         try:
-            synthesis = await resolved_speech_provider.synthesize(request.text, request_id)
+            if request.voice is None:
+                synthesis = await resolved_speech_provider.synthesize(request.text, request_id)
+            else:
+                synthesis = await resolved_speech_provider.synthesize(request.text, request_id, voice=request.voice)
         except SpeechProviderError as error:
             latency_ms = round((perf_counter() - started_at) * 1000)
             logger.warning(
                 "speech_failed request_id=%s provider=%s speaker_id=%s code=%s latency_ms=%s",
                 request_id,
                 resolved_speech_provider.name,
-                resolved_speech_provider.speaker_id,
+                speaker_id,
                 error.code,
                 latency_ms,
             )
@@ -670,7 +684,7 @@ def create_app(
                 "speech_failed request_id=%s provider=%s speaker_id=%s code=unexpected latency_ms=%s",
                 request_id,
                 resolved_speech_provider.name,
-                resolved_speech_provider.speaker_id,
+                speaker_id,
                 latency_ms,
             )
             raise HTTPException(
@@ -687,11 +701,13 @@ def create_app(
             "speech_completed request_id=%s provider=%s speaker_id=%s latency_ms=%s bytes=%s",
             request_id,
             resolved_speech_provider.name,
-            resolved_speech_provider.speaker_id,
+            speaker_id,
             latency_ms,
             len(synthesis.audio),
         )
-        response_headers = {"X-Request-Id": request_id, "Cache-Control": "no-store"}
+        response_headers = {
+            "X-Request-Id": request_id, "Cache-Control": "no-store", "X-Speech-Speaker-Id": str(speaker_id),
+        }
         response_headers.update(speech_timing_headers(synthesis.timing))
         return Response(
             content=synthesis.audio,

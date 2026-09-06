@@ -10,7 +10,7 @@ import {
   type SpeechGateway,
   type LipSyncOutput,
 } from "./SpeechController";
-import type { SpeechHealth, SpeechStatus, SpeechSynthesisResult, SpeechTiming } from "./types";
+import type { SpeechHealth, SpeechStatus, SpeechSynthesisResult, SpeechTiming, VoiceSettings } from "./types";
 
 const WAV_BYTES = new Uint8Array([
   82, 73, 70, 70, 0, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32,
@@ -25,6 +25,35 @@ const READY_HEALTH: SpeechHealth = {
   credit: "VOICEVOX:テスト話者",
   message: "ready",
 };
+
+it("keeps one voice through sentences and final-text corrections; edits affect the next response", async () => {
+  const settings = { speaker_id: 14, speed_scale: 0.96, pitch_scale: -0.01, intonation_scale: 0.94 };
+  const selected: Array<VoiceSettings | undefined> = [];
+  const observed = createObservedCallbacks();
+  const controller = new SpeechController(createGateway({
+    synthesize: async (_text, _signal, voice) => {
+      selected.push(voice);
+      return { audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing: null };
+    },
+  }), observed.callbacks, null, () => new FakeAudio(), {
+    createObjectURL: () => "blob:voice-test", revokeObjectURL: vi.fn(),
+  });
+  controller.setVoiceSettings(settings);
+  controller.beginStreaming();
+  controller.appendStreamingText("最初の文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(1));
+  controller.setVoiceSettings({ ...settings, speaker_id: 3, speed_scale: 1.2 });
+  controller.appendStreamingText("次の文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(2));
+  expect(selected).toEqual([settings, settings]);
+  controller.completeStreaming("最初の文。訂正された文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(3));
+  expect(selected[2]).toEqual(settings);
+  controller.speak("新しい声で話す文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(4));
+  expect(selected[3]).toEqual({ ...settings, speaker_id: 3, speed_scale: 1.2 });
+  controller.dispose();
+});
 
 class FakeAudio implements SpeechAudio {
   public currentTime = 0;

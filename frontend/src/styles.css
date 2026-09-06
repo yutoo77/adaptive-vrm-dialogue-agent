@@ -254,6 +254,19 @@ input[type="range"] { width: 100%; min-height: 28px; accent-color: var(--accent)
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes stream-caret { 0%, 45% { opacity: 1; } 55%, 100% { opacity: .2; } }
+.voice-options { display: grid; min-width: 0; gap: 10px; margin: 16px 0 0; padding: 0; border: 0; }
+.voice-options > label { font-size: 13px; font-weight: 600; }
+.voice-options select { width: 100%; min-width: 0; }
+.voice-range { display: grid; gap: 4px; }
+.voice-range output { font-variant-numeric: tabular-nums; }
+.voice-settings-actions, .voice-settings-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.voice-settings-actions { margin-top: 6px; }
+.voice-settings-actions > button { width: auto; }
+.voice-settings-actions .text-button { padding: 8px 0; border: 0; color: var(--muted); background: transparent; }
+.voice-settings-actions > button:first-child { min-height: 40px; padding: 8px 18px; color: white; background: var(--accent); border: 0; border-radius: 10px; }
+.voice-settings-footer { margin-top: 10px; }
+.voice-settings-footer small { color: var(--muted); font-size: 12px; }
+
 @keyframes loading-progress { from { transform: translateX(-70%); } to { transform: translateX(180%); } }
 @keyframes voice-input-pulse { from { opacity: .6; } to { opacity: 0; } }
 

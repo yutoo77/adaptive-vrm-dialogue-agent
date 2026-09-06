@@ -1,3 +1,22 @@
+export interface VoiceSettings {
+  readonly speaker_id: number;
+  readonly speed_scale: number;
+  readonly pitch_scale: number;
+  readonly intonation_scale: number;
+}
+
+export interface VoiceOption {
+  readonly id: number;
+  readonly name: string;
+  readonly style: string;
+  readonly credit: string;
+}
+
+export interface VoiceCatalog {
+  readonly defaults: VoiceSettings;
+  readonly voices: readonly VoiceOption[];
+}
+
 export interface SpeechHealth {
   readonly status: "ready" | "unavailable";
   readonly provider: "voicevox";

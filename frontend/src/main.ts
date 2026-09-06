@@ -9,6 +9,7 @@ import { PushToTalkController } from "./transcription/PushToTalkController";
 import { TranscriptionClient } from "./transcription/TranscriptionClient";
 import type { CameraSettings, CharacterState } from "./types/character";
 import { UIController } from "./ui/UIController";
+import { VoiceSettingsPanel } from "./ui/VoiceSettingsPanel";
 import { PerformanceTimelineController } from "./vrm/PerformanceTimelineController";
 import { VRMViewer } from "./vrm/VRMViewer";
 
@@ -18,21 +19,34 @@ if (!root) throw new Error("Application root was not found.");
 const ui = new UIController(root);
 let viewer: VRMViewer | null = null;
 let performanceTimeline: PerformanceTimelineController | null = null;
+let voiceSettings: VoiceSettingsPanel | null = null;
+const speechClient = new SpeechClient();
 const lipSync = new LipSyncController({
   onViseme: (viseme, weight) => viewer?.setLipSyncViseme(viseme, weight),
   onReset: () => viewer?.resetLipSync(),
 });
 const speech = new SpeechController(
-  new SpeechClient(),
+  speechClient,
   {
-    onStatusChange: (status) => ui.updateSpeechStatus(status),
+    onStatusChange: (status) => { ui.updateSpeechStatus(status); voiceSettings?.setSpeechStatus(status); },
     onPlaybackChange: (event) => performanceTimeline?.handlePlayback(event),
     onWarning: (message) => ui.addWarning(message),
   },
   lipSync,
 );
+voiceSettings = new VoiceSettingsPanel(root, speechClient, {
+  change: (settings) => speech.setVoiceSettings(settings),
+  preview: () => {
+    performanceTimeline?.clear();
+    speech.speak("こんにちは、しずくだよ。この声でお話ししよう。忙しかった分、少し休もうね。");
+  },
+  stop: () => speech.stop(),
+});
 const voiceInput = new PushToTalkController(new TranscriptionClient(), {
-  onStatusChange: (status) => ui.updateVoiceInputStatus(status),
+  onStatusChange: (status) => {
+    ui.updateVoiceInputStatus(status);
+    voiceSettings?.setMicrophoneBusy(["requesting", "recording", "processing"].includes(status.state));
+  },
   onMicrophonesChange: (options, selectedDeviceId) => ui.updateMicrophoneOptions(options, selectedDeviceId),
   onTranscript: (text) => {
     ui.setDialogueDraft(text);
@@ -51,7 +65,7 @@ const dialogue = new DialogueController(
     onPartialAssistantMessage: (text) => ui.updateStreamingAssistantMessage(text),
     onCompleteAssistantMessage: (text) => ui.completeStreamingAssistantMessage(text),
     onDiscardPartialAssistantMessage: () => ui.discardStreamingAssistantMessage(),
-    onBusyChange: (busy) => ui.updateDialogueBusy(busy),
+    onBusyChange: (busy) => { ui.updateDialogueBusy(busy); voiceSettings?.setDialogueBusy(busy); },
     onCharacterState: (state) => {
       if (state === "thinking" || state === "error") performanceTimeline?.clear();
       viewer?.setState(state);
@@ -127,6 +141,7 @@ try {
     clearPersistentMemories: () => dialogue.clearPersistentMemories(),
     refreshPersistentMemories: () => dialogue.refreshPersistentMemories(),
     toggleSpeech: () => dialogue.toggleSpeech(),
+    loadVoices: () => { void voiceSettings?.load(); },
     toggleVoiceInput: () => voiceInput.toggle(),
     selectMicrophone: (deviceId: string) => voiceInput.selectMicrophone(deviceId),
     setVoiceAutoStop: (enabled: boolean) => voiceInput.setAutoStop(enabled),
@@ -174,6 +189,7 @@ window.addEventListener(
   () => {
     dialogue.dispose();
     voiceInput.dispose();
+    voiceSettings?.dispose();
     performanceTimeline?.dispose();
     viewer?.dispose();
     ui.dispose();

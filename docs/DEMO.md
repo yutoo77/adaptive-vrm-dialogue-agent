@@ -81,4 +81,6 @@ Profile v1.1.0 has [a separate conversation-style evaluation](evaluations/conver
 | Browser blocks autoplay | Use the replay button for the generated audio. |
 | A response takes too long | Press the same button, now labelled `応答を停止`; wait for the idle notice before sending again. |
 
+Voice preferences: in `設定 → 音声`, choose an installed speaking voice and adjust `速さ`, `高さ`, or `抑揚`. Use `声を試す` to hear a fixed local sentence, then stop it. Verify the draft and conversation remain unchanged. A new reply uses the selected settings; an already-started reply retains its original settings. Reload to verify persistence, and use `しずくの標準に戻す` to reset. Confirm the selected voice's credit before publishing audio. Details: [voice settings evaluation](evaluations/voice-settings-2026-09-06.md).
+
 Evaluation details and failure cases are stored under [docs/evaluations](evaluations/).

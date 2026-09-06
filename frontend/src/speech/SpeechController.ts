@@ -2,13 +2,14 @@ import type { PerformancePlan } from "../types/character";
 import { getVoicePlaybackRate, resolveSpeechDurationMs } from "./SpeechPlayback";
 import { SpeechApiError } from "./SpeechClient";
 import { StreamingSpeechQueue } from "./StreamingSpeechQueue";
-import type { SpeechHealth, SpeechStatus, SpeechSynthesisResult, SpeechTiming } from "./types";
+import type { SpeechHealth, SpeechStatus, SpeechSynthesisResult, SpeechTiming, VoiceSettings } from "./types";
+import { copyVoiceSettings } from "./voicePreferences";
 
 export { getVoicePlaybackRate, resolveSpeechDurationMs } from "./SpeechPlayback";
 
 export interface SpeechGateway {
   readonly getHealth: (signal?: AbortSignal) => Promise<SpeechHealth>;
-  readonly synthesize: (text: string, signal?: AbortSignal) => Promise<SpeechSynthesisResult>;
+  readonly synthesize: (text: string, signal?: AbortSignal, voice?: VoiceSettings) => Promise<SpeechSynthesisResult>;
 }
 
 export interface SpeechAudio {
@@ -62,6 +63,7 @@ export class SpeechController {
   private latestOnStarted: (() => void) | null = null;
   private readonly streamingQueue: StreamingSpeechQueue;
   private disposed = false;
+  private voiceSettings: VoiceSettings | undefined;
 
   public constructor(
     private readonly gateway: SpeechGateway,
@@ -103,7 +105,18 @@ export class SpeechController {
     }
   }
 
+  public setVoiceSettings(voice: VoiceSettings | undefined): void {
+    this.voiceSettings = voice ? copyVoiceSettings(voice) : undefined;
+  }
+
   public speak(text: string, performancePlan?: PerformancePlan, onStarted?: () => void): void {
+    this.speakWithVoice(text, performancePlan, onStarted, this.voiceSettings);
+  }
+
+  private speakWithVoice(
+    text: string, performancePlan: PerformancePlan | undefined,
+    onStarted: (() => void) | undefined, voice: VoiceSettings | undefined,
+  ): void {
     this.streamingQueue.discard();
     this.cancelLegacy(false);
     this.latestAudio = null;
@@ -116,7 +129,7 @@ export class SpeechController {
     const startedAt = performance.now();
     this.requestController = controller;
     this.setStatus("generating", "VOICEVOXで音声を生成しています。", "stop");
-    void this.generateAndPlay(text, operationId, controller, startedAt);
+    void this.generateAndPlay(text, operationId, controller, startedAt, voice);
   }
 
   public beginStreaming(onStarted?: () => void): void {
@@ -126,7 +139,7 @@ export class SpeechController {
     this.latestText = "";
     this.latestPerformance = null;
     this.latestOnStarted = null;
-    this.streamingQueue.begin(onStarted);
+    this.streamingQueue.begin(onStarted, this.voiceSettings);
   }
 
   public appendStreamingText(delta: string): void {
@@ -135,7 +148,7 @@ export class SpeechController {
 
   public completeStreaming(finalText: string, performancePlan?: PerformancePlan): void {
     const completion = this.streamingQueue.complete(finalText, performancePlan);
-    if (!completion.handled) this.speak(finalText, performancePlan, completion.onStarted);
+    if (!completion.handled) this.speakWithVoice(finalText, performancePlan, completion.onStarted, completion.voice);
   }
 
   public toggle(): void {
@@ -176,9 +189,10 @@ export class SpeechController {
     operationId: number,
     controller: AbortController,
     startedAt: number,
+    voice: VoiceSettings | undefined,
   ): Promise<void> {
     try {
-      const synthesis = await this.gateway.synthesize(text, controller.signal);
+      const synthesis = await this.gateway.synthesize(text, controller.signal, voice);
       if (!this.isCurrent(operationId)) return;
       this.requestController = null;
       this.latestAudio = synthesis.audio;

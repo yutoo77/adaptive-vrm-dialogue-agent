@@ -182,6 +182,29 @@ export function createAppMarkup(): string {
               <section class="settings-section">
                 <h3>音声出力</h3>
                 <p id="speech-status-message" class="settings-status-message">音声出力を確認しています</p>
+                <fieldset id="voice-options" class="voice-options" disabled>
+                  <legend class="visually-hidden">キャラクターの声</legend>
+                  <label for="voice-choice">声</label>
+                  <select id="voice-choice"><option value="">声を読み込んでいます</option></select>
+                  <div class="voice-range">
+                    <div class="range-row"><label for="voice-speed">速さ</label><output id="voice-speed-value" for="voice-speed">0.96×</output></div>
+                    <input id="voice-speed" type="range" min="0.6" max="1.6" step="0.01" value="0.96" />
+                  </div>
+                  <div class="voice-range">
+                    <div class="range-row"><label for="voice-pitch">高さ</label><output id="voice-pitch-value" for="voice-pitch">-0.01</output></div>
+                    <input id="voice-pitch" type="range" min="-0.15" max="0.15" step="0.01" value="-0.01" />
+                  </div>
+                  <div class="voice-range">
+                    <div class="range-row"><label for="voice-intonation">抑揚</label><output id="voice-intonation-value" for="voice-intonation">0.94×</output></div>
+                    <input id="voice-intonation" type="range" min="0" max="1.5" step="0.01" value="0.94" />
+                  </div>
+                  <div class="voice-settings-actions">
+                    <button id="voice-preview" type="button">声を試す</button>
+                    <button id="voice-reset" class="text-button" type="button">しずくの標準に戻す</button>
+                  </div>
+                </fieldset>
+                <div class="voice-settings-footer"><small id="voice-credit"></small><button id="voice-refresh" class="text-button" type="button">再接続</button></div>
+                <p id="voice-settings-note" class="settings-status-message" role="status">設定を開くと声を選べます。</p>
               </section>
               <section class="settings-section connection-note">
                 <h3>接続とデータ</h3>
