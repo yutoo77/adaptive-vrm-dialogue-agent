@@ -72,6 +72,17 @@ def test_repeated_low_intensity_gesture_is_suppressed_between_turns() -> None:
     assert repeated.continuity.gesture_budget == 1
 
 
+def test_quiet_reply_can_carry_a_gentle_expression_without_adding_a_gesture() -> None:
+    store = EmotionalContinuityStore()
+    store.resolve("session-a", plan("gentle", 0.4))
+    quiet = store.resolve("session-a", plan("neutral", 0.2, "none"))
+
+    assert quiet.performance.emotion == "gentle"
+    assert quiet.continuity.carried_from_previous is True
+    assert quiet.performance.gesture == "none"
+    assert quiet.performance.cues == []
+
+
 def test_sessions_are_isolated_bounded_and_resettable() -> None:
     store = EmotionalContinuityStore(max_sessions=1)
     store.resolve("session-a", plan("gentle", 0.5))

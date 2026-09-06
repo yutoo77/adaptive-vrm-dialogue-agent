@@ -10,7 +10,7 @@ Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声
 
 このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
 
-現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queue、Version付きCharacter Profile `月白 しずく v1.0.0`を実装しています。さらに、Session内の短期感情を最大2 Turnだけ減衰させ、発話後も弱い表情・視線・呼吸を残し、同じ頷きの連発を抑える`Embodied Continuity v0.6`まで接続しました。多様な会話での自然さ、独自VRM、利用者による聴取評価は今後の対象であり、完成済みとは主張しません。
+現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queue、Version付きCharacter Profile `月白 しずく v1.1.0`を実装しています。さらに、Session内の短期感情を最大2 Turnだけ減衰させ、発話後も弱い表情・視線・呼吸を残し、同じ頷きの連発を抑える`Embodied Continuity v0.6`まで接続しました。多様な会話での自然さ、独自VRM、利用者による聴取評価は今後の対象であり、完成済みとは主張しません。
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
@@ -56,7 +56,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 | 領域 | 実装内容 |
 | --- | --- |
-| Character Identity | `月白 しずく v1.0.0`、口調・価値観・避ける表現・Theme・Voice・演技上限を一つのProfileで管理 |
+| Character Identity | `月白 しずく v1.1.0`、口調・価値観・避ける表現・Theme・Voice・演技上限を一つのProfileで管理。短い会話例と返答の意味に応じた演技選択を調整 |
 | 対話 | Text入力、Mock/OpenAI Provider切替、Structured Outputのreply-only Streaming、明示返答スタイル4種、生成中の応答停止、Token使用量、Timeout、Request ID |
 | Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認 |
 | Voice output | ローカルVOICEVOX、閉じた文の先行合成、順序付き再生Queue、停止、再再生、Text回答を残すFallback |
@@ -317,6 +317,8 @@ npm audit
 
 2026-09-05のUI改修では、Frontend単体83件・ブラウザ13件、Backend75件、Buildと静的検査を確認しました。実画面の測定値、初回の失敗と修正、未確認事項は[UI確認記録](docs/UI_REVIEW.md)に分けています。
 
+2026-09-06の口調・演技選択調整後は、Frontend 87件・ブラウザ14件、Backend 89件、型検査・ESLint・Ruff・Build・pip checkが成功。npm audit / pip-auditは既知脆弱性0件でした。追加ブラウザテストは固定の演技データを使う表示確認であり、実API・実音声の通し評価とは分けています。
+
 2026-08-25時点の確認結果:
 
 - Frontend: TypeScript、ESLint、Vitest **83件**、Playwright browser smoke **7件**、production build成功
@@ -338,6 +340,7 @@ GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実
 
 ## Evaluation
 
+- [会話の口調と演技選択 / 改善前後9件ずつ・自己紹介の追加2件](docs/evaluations/conversation-style-2026-09-06.md)
 - [実API対話の再確認 / Textと演技データ3件・残る体験評価](docs/evaluations/real-api-tempo-2026-09-06.md)
 - [描画環境と会話テンポ / GPU実測とFPS計測の修正](docs/evaluations/rendering-tempo-2026-09-06.md)
 - [Conversation tempo / 音声接続の再利用と計測の限界](docs/evaluations/conversation-tempo-2026-09-05.md)
@@ -388,8 +391,8 @@ adaptive-vrm-dialogue-agent/
 - faster-whisper `small`は、検証した5.621秒音声のAPI経由認識に約6.8秒かかりました。Noiseを含む固定マイク評価は未完了です。
 - SQLiteは暗号化していません。機微情報の保存には使えません。
 - 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
-- 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。実OpenAIは架空Dataの固定4 Turn、Text Streaming 1件、Speech Pipeline 1件だけで、多様な入力、再現分散、利用者が感じる自然さは未評価です。
-- Character Profileは現在`月白 しずく v1.0.0`のCode定義1種類です。複数Profile切替、UI編集、独自VRMとの統合、聴取評価は未完了です。
+- 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。実OpenAIは架空Dataの固定ケースでのみ評価しています。9月6日の口調調整は改善前後9件ずつと自己紹介の追加2件で、最終Promptによる全9件の再測定、多数回の分散、利用者が感じる自然さは未評価です。
+- Character Profileは現在`月白 しずく v1.1.0`のCode定義1種類です。複数Profile切替、UI編集、独自VRMとの統合、聴取評価は未完了です。
 - 短期感情はRAM内で最大2 Turnだけ継続します。Mock分類と明示変化の補正は日本語Keyword Ruleなので、皮肉、複合感情、未知の言い換えを正しく理解するとは限りません。最適な減衰時間も利用者評価前の初期値です。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
 - production JavaScriptは約870kBで、Viteの500kB警告が出ます。

@@ -16,7 +16,7 @@ test("free Mock dialogue completes one browser round trip", async ({ page }) => 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "月白 しずく" })).toBeVisible();
-  await expect(page.locator("#character-version")).toHaveText("v1.0.0");
+  await expect(page.locator("#character-version")).toHaveText("v1.1.0");
   await expect(page.locator("#character-tagline")).toHaveText("静かに寄り添い、考えをほどく案内役");
   await expect(page.locator("#dialogue-provider")).toHaveText("Mock");
   await expect(page.locator("#dialogue-provider-note")).toHaveText("定型応答 · 外部送信なし");

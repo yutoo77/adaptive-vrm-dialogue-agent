@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新日: 2026-08-25
+更新日: 2026-09-06
 
 このRoadmapは機能数ではなく、各Vertical Sliceが「動く・復帰できる・評価できる・説明できる」状態になったかで進行を判断する。
 
@@ -13,6 +13,8 @@
 ## 現在のRelease目標
 
 `v0.4 Natural Conversation`、`v0.5 Character Identity`、`v0.6 Embodied Continuity`を実装した。`月白 しずく v1.0.0`の本文・声・演技・UIを一つのProfileへ接続し、さらにSession内の感情を最大2 Turnだけ減衰して表情・視線・呼吸へ残す。Character Identityは実OpenAI 26/26・実VOICEVOX 10/10、Continuityは初回24/26のFailureを修正後26/26で確認した。次は独自VRMとのVisual統合、または実利用者による会話・聴取評価を独立Sliceとして進める。
+
+9月6日追記: 現在のProfileは`v1.1.0`。自己紹介の説明書調と、性格に引っ張られる演技選択を調整した。実API比較は改善前9件・候補9件・自己紹介再調整2件。上記v1.0.0の評価結果とは別の[記録](docs/evaluations/conversation-style-2026-09-06.md)に残す。次の主要作業は、現行UIで実API・音声・VRMを通した3〜5分の利用者確認。独自VRMやVisionへはまだ広げない。
 
 ### Public Portfolio Gate
 

@@ -58,7 +58,7 @@ def test_character_identity_evaluation_contract_with_fake_provider() -> None:
 
     assert result["evaluation"]["character_profile"] == {
         "id": "tsukishiro_shizuku",
-        "version": "1.0.0",
+        "version": "1.1.0",
     }
     assert result["evaluation"]["request_limit"] == 4
     assert result["summary"]["successful_cases"] == 4

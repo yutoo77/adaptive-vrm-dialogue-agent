@@ -62,6 +62,12 @@ flowchart LR
 
 現在はFrontend、Backendに加えて、音声出力を試す場合だけローカルVOICEVOX Engineを起動する構成である。Version付き`CharacterProfile`はBackendのCode定義を唯一のSourceとし、Health APIからFrontendへ公開する。音声入力はBackend process内のfaster-whisperを使う。Session別の短期履歴・要約・最大2 Turnの感情状態と、所有者が管理するSQLite長期記憶がある。認証、Tools、Vision、Embedding/RAGはない。
 
+### 会話口調と演技の分離（Profile v1.1.0）
+
+Profileの口調は短い会話例で示し、毎回の自己紹介・質問・助言を要求しない。`balanced`は雑談にも適用する。一方、演技Schemaの説明は性格ではなく、その返答の意味を指定する。普通の説明は`neutral / none`、喜びの共有は`happy`、いたわりは`gentle`という選び分けであり、種類を増やすためのランダム演技はしない。許可Enum、数値境界、Profileの強度上限0.72、最大2 Cue、既存の短期感情補正は変更していない。
+
+実APIの[固定ケース比較](docs/evaluations/conversation-style-2026-09-06.md)と、固定Planを使うブラウザ回帰テストは別に扱う。前者はモデルの出力、後者はUIが違う反応を受け取れることの確認であり、音声や表情の主観的な自然さの証明ではない。
+
 ## 主要な処理の流れ
 
 1. `UIController`がTextと明示選択した4種類の返答スタイルを受け取り、空文字・1000文字超・処理中の再送を防ぐ。

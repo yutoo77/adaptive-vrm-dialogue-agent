@@ -25,9 +25,16 @@ class PerformancePlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    emotion: PerformanceEmotion = Field(description="返答全体の感情。誇張せず最も近いものを1つ選ぶ。")
-    intensity: float = Field(ge=0, le=1, description="演技の強さ。通常は0.3から0.7に収める。")
-    gesture: PerformanceGesture = Field(description="返答開始時に一度だけ行う小さなしぐさ。")
+    emotion: PerformanceEmotion = Field(description=(
+        "返答時の姿勢。neutral=日常の説明・平静、happy=喜びの共有、gentle=いたわり・慰め、"
+        "curious=関心を持って尋ねる、cautious=危険への注意、confused=文脈不足で聞き返す。"
+        "口調が穏やかという理由だけでgentleにしない。"
+    ))
+    intensity: float = Field(ge=0, le=1, description="演技の強さ。通常0.15〜0.5、明確な喜びでも0.65程度まで。")
+    gesture: PerformanceGesture = Field(description=(
+        "返答開始時のしぐさ。none=動き不要（通常の説明など）、small_nod=受け止め・肯定、"
+        "head_tilt=疑問・聞き返し、soft_bounce=明確な喜び。動かない返答も自然な選択。"
+    ))
     voice_style: VoiceStyle = Field(description="音声再生時の控えめなテンポのニュアンス。")
     cues: list[PerformanceCue] = Field(
         min_length=0,
