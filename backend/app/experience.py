@@ -39,7 +39,6 @@ SOLVED_REPLY = (
     "開いたね。中には、青い糸を結んだ小さな便箋。"
     "『また、月の見える夜に』って書いてある。いっしょに読めてよかった。"
 )
-SCRIPTED_NOTICE = "固定の応答で相談できます。調査・配置・ヒントはAPIを使いません。"
 UNAVAILABLE_NOTICE = "相談AIは利用できないため、固定の応答で続けます。調査・配置・ヒントはそのまま使えます。"
 
 
@@ -148,7 +147,7 @@ class ExperienceService:
                 focus_target=None,
                 messages=[ExperienceMessage(role="assistant", text=START_REPLY)],
                 narration_provider="scripted",
-                notice=self._unavailable_notice or (SCRIPTED_NOTICE if self._narrator is None else None),
+                notice=self._unavailable_notice,
             )
             self._sessions[session_id] = _Session(snapshot, self._clock())
             return snapshot.model_copy(deep=True)
@@ -178,7 +177,7 @@ class ExperienceService:
                 raise _error(409, "experience_in_progress", "この体験では、いま相談の返事を待っています。")
             if request.action != "message":
                 return self._fixed_action(session, request)
-            notice = self._unavailable_notice or (SCRIPTED_NOTICE if self._narrator is None else None)
+            notice = self._unavailable_notice
             if session.narration_calls >= self._max_calls:
                 notice = "この体験の相談AIの回数上限に達したため、固定の応答で続けます。"
             elif len(self._provider_tasks) >= self._max_pending:

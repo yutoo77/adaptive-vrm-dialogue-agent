@@ -5,6 +5,7 @@ import { ExperienceClient, type ExperienceGateway } from "./ExperienceClient";
 import { ExperienceSession, type ExperienceSessionState } from "./ExperienceSession";
 import { createExperienceMarkup, MOON_LABELS, TARGET_LABELS, moonIcon } from "./createExperienceMarkup";
 import { isMoon, isTarget, placeMoon, type Arrangement, type ExperienceFocusTarget, type Moon } from "./types";
+import { speechStatusLabel, voiceStatusLabel } from "./statusPresentation";
 import "./experience.css";
 
 export type { ExperienceFocusTarget } from "./types";
@@ -176,12 +177,12 @@ export class ExperienceController {
     this.required("#experience-restart").hidden = !state.hasSession;
     const feedback = state.error || state.snapshot?.notice || "";
     this.required("#experience-feedback").hidden = !feedback && !state.busy;
-    this.required("#experience-feedback-text").textContent = state.busy ? "しずくと、確かめています…" : feedback;
+    this.required("#experience-feedback-text").textContent = state.busy ? "確認中…" : feedback;
     this.required("#experience-refresh").hidden = !state.needsRefresh || state.expired || !state.hasSession;
     this.required("#experience-feedback").dataset["error"] = String(!!state.error);
     if (state.snapshot) {
       this.required("#experience-reply").textContent = state.snapshot.reply;
-      this.required("#experience-narration-source").textContent = state.snapshot.narration_provider === "openai" ? "相談APIの返答" : "物語の言葉（固定）";
+      this.required("#experience-narration-source").textContent = state.snapshot.narration_provider === "openai" ? "今の返事：AI生成" : "今の返事：定型文";
       const history = this.required<HTMLOListElement>("#experience-history");
       history.replaceChildren(...state.snapshot.messages.map((message) => {
         const item = document.createElement("li");
@@ -220,9 +221,9 @@ export class ExperienceController {
       const mark = button.querySelector(".exp-inspected");
       if (mark) mark.textContent = inspected ? "✓" : "";
     });
-    this.required("#experience-progress").textContent = solved ? "小箱は開きました" : `調べた場所 ${snapshot?.inspected.length ?? 0} / 3`;
-    this.required("#experience-selection").textContent = solved ? "三枚の栞が、ひとつの便りをつなぎました。" : this.selected ?
-      `${MOON_LABELS[this.selected]}を選択中。置きたい枠を押してね。` : "栞をひとつ選び、左から並ぶ枠へ置いてみて。";
+    this.required("#experience-selection").hidden = solved;
+    this.required("#experience-selection").textContent = this.selected ?
+      `${MOON_LABELS[this.selected]} → 置く枠を選ぶ` : "栞を選んで、枠に置く";
     this.root.querySelectorAll<HTMLButtonElement>("[data-moon]").forEach((button) => {
       const moon = button.dataset["moon"];
       if (!isMoon(moon)) return;
@@ -246,11 +247,10 @@ export class ExperienceController {
     const hint = snapshot?.hint_level ?? 0;
     const clues: string[] = [];
     if (hasLetter) clues.push("手紙の裏面：丸い月は真ん中に。細い月は、半分の月より後ろに。");
-    if (hasLetter && hint >= 1) clues.push("丸い月の位置と、残りの二枚の前後。このふたつを見てみよう。");
-    if (hasLetter && hint >= 2) clues.push("真ん中を決めたら、残った二枚の前後を考えてみよう。左から順番に。");
-    if (hasLetter && hint >= 3) clues.push("左から、半分の月 → 丸い月 → 細い月。");
-    if (!hasLetter) clues.push("手紙の裏面はしずくが読めます。手紙も調べてみてください。");
-    if (hasLetter && hint === 0) clues.push("このふたつの条件で並べられます。考え方に迷ったら、しずくにヒントを聞いてみて。");
+    if (hasLetter && hint >= 3) clues.push("ヒント：左から、半分の月 → 丸い月 → 細い月。");
+    else if (hasLetter && hint >= 2) clues.push("ヒント：真ん中を決めてから、残り二枚の前後を考える。左から順番に。");
+    else if (hasLetter && hint >= 1) clues.push("ヒント：丸い月の位置と、残り二枚の前後。");
+    if (!hasLetter) clues.push("まだ見つかっていません。");
     this.required("#experience-clue-text").textContent = clues.join("\n");
   }
 
@@ -258,7 +258,7 @@ export class ExperienceController {
     const unavailable = state.busy || state.needsRefresh || !state.snapshot || this.voiceBusy;
     const solved = state.snapshot?.phase === "solved";
     this.required<HTMLButtonElement>("#experience-start").disabled = state.busy || state.expired || this.voiceBusy;
-    this.required<HTMLButtonElement>("#experience-start").textContent = state.busy ? "書斎を開いています…" : state.hasSession ? "書斎への接続を確認する" : "書斎に入る →";
+    this.required<HTMLButtonElement>("#experience-start").textContent = state.busy ? "準備中…" : state.hasSession ? "接続を確認する" : "書斎に入る →";
     this.required<HTMLButtonElement>("#experience-restart").disabled = state.busy || this.voiceBusy;
     this.required<HTMLButtonElement>("#experience-refresh").disabled = state.busy;
     this.required<HTMLButtonElement>("#experience-submit").disabled = unavailable || solved || !state.snapshot?.arrangement.every((moon) => moon !== null);
@@ -273,20 +273,29 @@ export class ExperienceController {
     microphone.disabled = !this.voiceBusy && (state.busy || state.needsRefresh || !state.snapshot || this.voice.state === "checking" || this.voice.state === "unavailable");
     microphone.textContent = this.voice.state === "recording" ? "録音を終える" : this.voice.state === "processing" || this.voice.state === "requesting" ? "入力を停止" : "マイク";
     microphone.setAttribute("aria-label", this.voice.state === "recording" ? "録音を終えて文字にする" : "音声入力を切り替える");
-    this.required("#experience-speech-status").textContent = this.speech.message;
-    this.required("#experience-voice-status").textContent = this.voice.message;
+    const speechLabel = speechStatusLabel(this.speech);
+    const voiceLabel = voiceStatusLabel(this.voice);
+    this.required("#experience-speech-status").textContent = speechLabel;
+    this.required("#experience-voice-status").textContent = voiceLabel;
+    this.required("#experience-statuses").hidden = !speechLabel && !voiceLabel;
+    const speechIssue = this.speech.state === "error" || this.speech.state === "unavailable" || this.speech.reason === "autoplay-blocked";
+    const voiceIssue = this.voice.state === "error" || this.voice.state === "unavailable";
+    this.required("#experience-audio-info").hidden = !speechIssue && !voiceIssue;
+    this.required("#experience-speech-detail").textContent = speechIssue ? this.speech.message : "";
+    this.required("#experience-voice-detail").textContent = voiceIssue ? this.voice.message : "";
     const speech = this.required<HTMLButtonElement>("#experience-speech");
     speech.hidden = this.speech.action === "none";
     speech.disabled = state.busy;
-    speech.textContent = this.speech.action === "stop" ? "音声を止める" : "もう一度聞く";
+    speech.textContent = this.speech.action === "stop" ? "音声を止める" : this.speech.reason === "autoplay-blocked" ? "再生" : "もう一度聞く";
     this.root.setAttribute("aria-busy", String(state.busy));
   }
 
   private renderProvider(): void {
-    this.required("#experience-provider").textContent = this.provider === "openai" ?
-      "相談する：設定済みの対話APIを最大1回使用（従量課金）。送るのはこの体験の相談と許可済みの手掛かりだけ。通常の対話・記憶は使いません。" : this.provider === "mock" ?
-      "相談する：Mockの固定応答（外部AI送信なし）。通常の対話・記憶は使いません。" :
-      "相談の接続先は確認中です。API設定時は体験の相談だけを送信し、従量課金される場合があります。通常の対話・記憶は使いません。";
+    this.required("#experience-provider").textContent = this.provider === "openai" ? "相談：外部API・従量課金" :
+      this.provider === "mock" ? "相談：定型応答・外部送信なし" : "相談：接続先を確認中（APIは従量課金）";
+    this.required("#experience-provider-detail").textContent = this.provider === "mock" ?
+      "相談は定型文で返します。通常の対話・記憶は使いません。" :
+      "相談1回につき、設定済みの外部AIへ最大1回送信します。送るのはしずくの固定設定、今回の相談、この体験の直近履歴12件、開示済みの手掛かりと盤面の状態です。通常の対話・記憶は送りません。停止しても発生済みの料金は取り消せません。";
   }
 
   private get voiceBusy(): boolean {

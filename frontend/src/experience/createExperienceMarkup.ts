@@ -13,7 +13,7 @@ export function moonIcon(moon: Moon, size = 34): string {
 export function createExperienceMarkup(): string {
   return `
     <header class="exp-heading">
-      <div><p class="exp-kicker">しずくと、ひとつの物語</p><h1>月待ちの便り</h1></div>
+      <h1>月待ちの便り</h1>
       <button type="button" id="experience-restart" class="exp-text-button" hidden>最初から</button>
     </header>
     <div class="exp-layout">
@@ -47,42 +47,42 @@ export function createExperienceMarkup(): string {
             <path class="exp-box-lid" d="m421 190 20-2 6 4-20 2m16-3 20-2 6 4-20 2m16-3 20-2 6 4-20 2" fill="none" stroke="#b5a282" stroke-width="2"/>
             <path d="M345 70h97M345 80h57" stroke="#dcdedc" stroke-width="2"/>
           </svg>
-          <div class="exp-scene-caption" aria-hidden="true">月を待つ、静かな書斎。</div>
           <button type="button" class="exp-hotspot exp-window" data-inspect="window" aria-label="窓を調べる" hidden><span>窓</span><span class="exp-inspected" aria-hidden="true"></span></button>
           <button type="button" class="exp-hotspot exp-letter" data-inspect="letter" aria-label="手紙を調べる" hidden><span>手紙</span><span class="exp-inspected" aria-hidden="true"></span></button>
           <button type="button" class="exp-hotspot exp-box" data-inspect="box" aria-label="小箱を調べる" hidden><span>小箱</span><span class="exp-inspected" aria-hidden="true"></span></button>
         </div>
         <div id="experience-landing" class="exp-landing">
-          <h2>あなたに見えるもの。<br>しずくに読めるもの。</h2>
-          <p>三枚の月の栞と、閉じた小箱。<br>手掛かりを持ち寄って、ふたりで箱を開ける小さな体験です。</p>
           <button type="button" id="experience-start" class="exp-primary">書斎に入る <span aria-hidden="true">→</span></button>
-          <p class="exp-fine">時間制限なし · 操作とヒントはAPI課金なし<br>進行はこのページの間だけ保持されます。自動保存はありません。</p>
+          <p class="exp-fine">自動保存なし</p>
         </div>
         <div id="experience-play" class="exp-play" hidden>
-          <div class="exp-board-heading"><h2 id="experience-board-title">三枚の月の栞</h2><span id="experience-progress" class="exp-fine"></span></div>
-          <p id="experience-selection" class="exp-instruction" aria-live="polite">栞をひとつ選び、左から並ぶ枠へ置いてみて。</p>
+          <h2 id="experience-board-title">月の栞</h2>
+          <p id="experience-selection" class="exp-instruction" aria-live="polite">栞を選んで、枠に置く</p>
           <div class="exp-moons" role="group" aria-label="月の栞を選ぶ">
             ${(["full", "crescent", "half"] as const).map((moon) => `<button type="button" class="exp-moon" data-moon="${moon}" aria-pressed="false">${moonIcon(moon)}<span>${MOON_LABELS[moon]}</span><small data-moon-location="${moon}">手元</small></button>`).join("")}
           </div>
           <div class="exp-slots" role="group" aria-label="小箱の枠・左から順に">
             ${[0, 1, 2].map((index) => `<button type="button" class="exp-slot" data-slot="${index}" aria-label="${index + 1}番目の枠、空"><small>${index + 1}</small><span class="exp-slot-moon" aria-hidden="true">＋</span><span class="exp-slot-label">空の枠</span></button>`).join("")}
           </div>
-          <p class="exp-slot-help">選択なしで置いた栞を押すと、手元に戻せます。</p>
-          <div class="exp-board-actions"><button type="button" id="experience-submit" class="exp-primary">この並びで開ける</button><button type="button" id="experience-hint" class="exp-secondary">しずくにヒントを聞く</button></div>
-          <details class="exp-clue"><summary>ふたりの手掛かり</summary><p id="experience-clue-text">気になる場所を押して、調べてみてください。手紙の裏面はしずくが読めます。</p></details>
-          <section id="experience-ending" class="exp-ending" aria-label="物語の終わり" hidden><span aria-hidden="true">${moonIcon("crescent", 28)}</span><div><h2>便りは、あなたのもとへ。</h2><p>小箱が開きました。少し、この余韻を楽しんでいこう。</p></div></section>
+          <div class="exp-board-actions"><button type="button" id="experience-submit" class="exp-primary">この並びで開ける</button><button type="button" id="experience-hint" class="exp-secondary">ヒントを聞く</button></div>
+          <div class="exp-board-notes">
+            <details class="exp-clue"><summary>手掛かり</summary><p id="experience-clue-text">まだ見つかっていません。</p></details>
+            <details class="exp-help"><summary>操作方法</summary><p>窓・手紙・小箱を押すと調べられます。栞を選び、置きたい枠を押してください。</p><p>選択中の栞をもう一度押すと選択解除。何も選ばずに枠の栞を押すと、手元に戻せます。</p></details>
+          </div>
+          <section id="experience-ending" class="exp-ending" aria-label="物語の終わり" hidden><span aria-hidden="true">${moonIcon("crescent", 28)}</span><h2>小箱が開いた</h2></section>
         </div>
         <div id="experience-feedback" class="exp-feedback" role="status" aria-live="polite" hidden><p id="experience-feedback-text"></p><button type="button" id="experience-refresh" class="exp-secondary" hidden>状態を確認する</button></div>
       </section>
       <aside class="exp-companion" aria-label="一緒に考えるしずく">
       <div id="experience-avatar-slot"></div>
       <section id="experience-conversation" class="exp-conversation" aria-label="この体験の相談" hidden>
-        <div class="exp-reply-heading"><h2>しずく</h2><span id="experience-narration-source" class="exp-fine">物語の言葉</span><button type="button" id="experience-speech" class="exp-text-button" hidden>もう一度聞く</button></div>
+        <div class="exp-reply-heading"><h2>しずく</h2><button type="button" id="experience-speech" class="exp-text-button" hidden>もう一度聞く</button></div>
         <p id="experience-reply" class="exp-reply" aria-live="polite"></p>
-        <div class="exp-statuses"><span id="experience-speech-status"></span><span id="experience-voice-status"></span></div>
-        <form id="experience-form"><label for="experience-input">しずくに短く相談する</label><div class="exp-input-row"><textarea id="experience-input" rows="2" maxlength="500" placeholder="「手紙には何と書いてある？」" aria-describedby="experience-provider"></textarea><div class="exp-input-actions"><button type="button" id="experience-microphone" class="exp-secondary" aria-label="音声で相談を入力する">マイク</button><button type="submit" id="experience-send" class="exp-primary">相談する</button><button type="button" id="experience-stop" class="exp-secondary" hidden>停止</button></div></div></form>
-        <p id="experience-provider" class="exp-fine"></p>
-        <details class="exp-history"><summary>ここまでのやりとり <span id="experience-history-count"></span></summary><ol id="experience-history"></ol></details>
+        <div id="experience-statuses" class="exp-statuses" role="status"><span id="experience-speech-status"></span><span id="experience-voice-status"></span></div>
+        <details id="experience-audio-info" class="exp-audio-info" hidden><summary>音声の詳細</summary><p id="experience-speech-detail"></p><p id="experience-voice-detail"></p></details>
+        <form id="experience-form"><label for="experience-input" class="exp-sr-only">しずくに相談する</label><div class="exp-input-row"><textarea id="experience-input" rows="2" maxlength="500" placeholder="しずくに相談…" aria-describedby="experience-provider"></textarea><div class="exp-input-actions"><button type="button" id="experience-microphone" class="exp-secondary" aria-label="音声で相談を入力する">マイク</button><button type="submit" id="experience-send" class="exp-primary">相談する</button><button type="button" id="experience-stop" class="exp-secondary" hidden>停止</button></div></div></form>
+        <details class="exp-info"><summary id="experience-provider">接続先を確認中</summary><p id="experience-provider-detail"></p><p>調査・配置・ヒントはAPI課金なし。進行は自動保存されず、再読み込みで最初からになります。</p><p id="experience-narration-source"></p></details>
+        <details class="exp-history"><summary>やりとり <span id="experience-history-count"></span></summary><ol id="experience-history"></ol></details>
       </section>
       </aside>
     </div>
