@@ -16,6 +16,8 @@ from app.experience import (
     FOCUS_CLUE,
     SECOND_CLUE,
     SOLUTION,
+    START_REPLY,
+    UNAVAILABLE_NOTICE,
     ExperienceService,
     experience_router,
     quiet_performance,
@@ -83,6 +85,43 @@ class BlockingNarrator(RecordingNarrator):
                 raise
             await self.release.wait()
         return ProviderReply(text="遅れて届いた返事。", performance=quiet_performance())
+
+
+def test_normal_mock_start_and_messages_do_not_report_an_attention_notice() -> None:
+    client = TestClient(app_for(ExperienceService()))
+    initial = client.post("/api/experience/sessions", json={"session_id": SESSION_A}).json()
+    assert initial["notice"] is None
+    assert initial["reply"] == START_REPLY
+    assert initial["narration_provider"] == "scripted"
+
+    state = client.post(
+        "/api/experience/action", json=action_payload(0, "message", message="何から始めよう")
+    ).json()
+    assert state["notice"] is None
+    assert state["reply"] == "わたしは手紙の裏を読めるよ。まず、手紙を一緒に調べてみよう。"
+    assert state["narration_provider"] == "scripted"
+
+    client.post("/api/experience/action", json=action_payload(1, "inspect", target="letter"))
+    state = client.post(
+        "/api/experience/action", json=action_payload(2, "message", message="何が読めた？")
+    ).json()
+    assert state["notice"] is None
+    assert state["reply"] == f"手紙には『{FIRST_CLUE}{SECOND_CLUE}』とあったね。この二つと、今の並びを見比べてみよう。"
+    assert state["narration_provider"] == "scripted"
+
+
+def test_unavailable_narrator_still_reports_attention_on_start_and_message() -> None:
+    client = TestClient(app_for(ExperienceService(unavailable_notice=UNAVAILABLE_NOTICE)))
+    initial = client.post("/api/experience/sessions", json={"session_id": SESSION_A}).json()
+    assert initial["notice"] == UNAVAILABLE_NOTICE
+    assert initial["reply"] == START_REPLY
+    assert initial["narration_provider"] == "scripted"
+    state = client.post(
+        "/api/experience/action", json=action_payload(0, "message", message="何から始めよう")
+    ).json()
+    assert state["notice"] == UNAVAILABLE_NOTICE
+    assert state["reply"] == "わたしは手紙の裏を読めるよ。まず、手紙を一緒に調べてみよう。"
+    assert state["narration_provider"] == "scripted"
 
 
 def test_scripted_puzzle_is_playable_and_only_submit_can_solve() -> None:
@@ -316,7 +355,7 @@ def test_provider_errors_use_scripted_fallback_without_retry_or_exception_detail
     response = client.post("/api/experience/action", json=action_payload(0, "message", message="秘密の入力"))
     assert response.status_code == 200
     assert response.json()["narration_provider"] == "scripted"
-    assert response.json()["notice"]
+    assert response.json()["notice"] == UNAVAILABLE_NOTICE
     assert "secret-detail" not in response.text and "private-error" not in response.text
     assert len(narrator.calls) == 1
     assert response.json()["revision"] == 1
