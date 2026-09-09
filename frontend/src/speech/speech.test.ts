@@ -290,10 +290,90 @@ describe("SpeechController", () => {
     controller.speak("自動再生テスト");
     await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("ready"));
     expect(observed.statuses.at(-1)?.action).toBe("replay");
+    expect(observed.statuses.at(-1)?.reason).toBe("autoplay-blocked");
+    const statusesAfterBlocked = observed.statuses.length;
+    const playbackAfterBlocked = observed.playback.length;
+    // Revoking the rejected media URL can deliver an error after cleanup.
+    blockedAudio.emit("error");
+    blockedAudio.emit("ended");
+    expect(observed.statuses).toHaveLength(statusesAfterBlocked);
+    expect(observed.playback).toHaveLength(playbackAfterBlocked);
+    expect(observed.statuses.at(-1)?.reason).toBe("autoplay-blocked");
 
     controller.toggle();
     await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
     expect(replayAudio.play).toHaveBeenCalledOnce();
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    replayAudio.emit("ended");
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "ready", action: "replay" });
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.dispose();
+  });
+
+  it("ignores late events from stopped audio but reports errors from the current replay", async () => {
+    const firstAudio = new FakeAudio();
+    const replayAudio = new FakeAudio();
+    const audios = [firstAudio, replayAudio];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks, null,
+      () => audios.shift() ?? replayAudio, { createObjectURL: () => "blob:events", revokeObjectURL: vi.fn() });
+    controller.speak("音声イベントを確認します。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    controller.stop();
+    const statusesAfterStop = observed.statuses.length;
+    firstAudio.emit("error");
+    firstAudio.emit("ended");
+    expect(observed.statuses).toHaveLength(statusesAfterStop);
+    expect(observed.statuses.at(-1)?.state).toBe("stopped");
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    const statusesDuringReplay = observed.statuses.length;
+    firstAudio.emit("error");
+    expect(observed.statuses).toHaveLength(statusesDuringReplay);
+    replayAudio.emit("error");
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "error", action: "replay" });
+    expect(observed.playback.at(-1)).toEqual({ type: "failed" });
+    expect(observed.warnings.at(-1)).toBe("音声の再生中にエラーが発生しました。");
+    const statusesAfterFailure = observed.statuses.length;
+    replayAudio.emit("ended");
+    expect(observed.statuses).toHaveLength(statusesAfterFailure);
+    controller.dispose();
+  });
+
+  it("marks streaming autoplay rejection and clears its reason after explicit playback recovers", async () => {
+    const blockedAudio = new FakeAudio(async () => { throw new DOMException("blocked", "NotAllowedError"); });
+    const replayAudio = new FakeAudio();
+    const audios = [blockedAudio, replayAudio];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks, null,
+      () => audios.shift() ?? replayAudio, { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() });
+    controller.beginStreaming();
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.appendStreamingText("自動再生を確認します。");
+    controller.completeStreaming("自動再生を確認します。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)).toMatchObject({
+      state: "ready", action: "replay", reason: "autoplay-blocked",
+    }));
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    replayAudio.emit("ended");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("ready"));
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.dispose();
+  });
+
+  it("does not label an explicit replay failure as autoplay blocked", async () => {
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks, null,
+      () => new FakeAudio(async () => { throw new DOMException("blocked", "NotAllowedError"); }),
+      { createObjectURL: () => "blob:blocked", revokeObjectURL: vi.fn() });
+    controller.speak("自動再生を確認します。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.reason).toBe("autoplay-blocked"));
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("error"));
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.dispose();
   });
 
   it("reports synthesis failure without throwing away the text flow", async () => {

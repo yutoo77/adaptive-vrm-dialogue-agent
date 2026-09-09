@@ -221,8 +221,12 @@ export class SpeechController {
     this.audioUrl = url;
     this.audio = audio;
 
-    audio.addEventListener("ended", () => this.finishPlayback(operationId, false), { once: true });
-    audio.addEventListener("error", () => this.finishPlayback(operationId, true), { once: true });
+    audio.addEventListener("ended", () => {
+      if (this.audio === audio) this.finishPlayback(operationId, false);
+    }, { once: true });
+    audio.addEventListener("error", () => {
+      if (this.audio === audio) this.finishPlayback(operationId, true);
+    }, { once: true });
     try {
       await audio.play();
       if (!this.isCurrent(operationId) || this.audio !== audio) {
@@ -257,7 +261,7 @@ export class SpeechController {
       const message = automatic
         ? "自動再生できませんでした。再生ボタンを押してください。"
         : "音声を再生できませんでした。ブラウザの音声設定を確認してください。";
-      this.setStatus(automatic ? "ready" : "error", message, "replay");
+      this.setStatus(automatic ? "ready" : "error", message, "replay", automatic ? "autoplay-blocked" : undefined);
       this.callbacks.onPlaybackChange({ type: "failed" });
       if (!automatic) this.callbacks.onWarning(message);
     }
@@ -323,8 +327,10 @@ export class SpeechController {
     return !this.disposed && operationId === this.operationId;
   }
 
-  private setStatus(state: SpeechStatus["state"], message: string, action: SpeechStatus["action"]): void {
-    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action });
+  private setStatus(
+    state: SpeechStatus["state"], message: string, action: SpeechStatus["action"], reason?: SpeechStatus["reason"],
+  ): void {
+    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action, ...(reason ? { reason } : {}) });
   }
 
   private publicMessage(error: unknown): string {

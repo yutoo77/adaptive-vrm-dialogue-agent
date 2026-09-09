@@ -249,7 +249,7 @@ export class StreamingSpeechQueue {
           }
           session.failed = true;
           this.cancelActive(false);
-          this.setStatus("ready", "自動再生できませんでした。再生ボタンを押してください。", "replay");
+          this.setStatus("ready", "自動再生できませんでした。再生ボタンを押してください。", "replay", "autoplay-blocked");
           this.callbacks.onPlaybackChange({ type: "failed" });
           settle(false);
         },
@@ -435,8 +435,10 @@ export class StreamingSpeechQueue {
     return !this.disposed && operationId === this.operationId;
   }
 
-  private setStatus(state: SpeechStatus["state"], message: string, action: SpeechStatus["action"]): void {
-    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action });
+  private setStatus(
+    state: SpeechStatus["state"], message: string, action: SpeechStatus["action"], reason?: SpeechStatus["reason"],
+  ): void {
+    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action, ...(reason ? { reason } : {}) });
   }
 
   private publicMessage(error: unknown): string {

@@ -62,4 +62,5 @@ export interface SpeechStatus {
   readonly state: SpeechUiState;
   readonly message: string;
   readonly action: "none" | "stop" | "replay";
+  readonly reason?: "autoplay-blocked";
 }
