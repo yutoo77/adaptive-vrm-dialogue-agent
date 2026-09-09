@@ -54,7 +54,23 @@ Do not store sensitive or real personal information in a public demo.
 
 Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, one Code-defined Character Profile, no original VRM yet, fixed Japanese emotion markers and a two-turn heuristic rather than broad or user-rated naturalness, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
 
-## One-minute route
+For the separate cooperative experience, use the route below; do not replace or reset the ordinary dialogue demo.
+
+## Cooperative experience — 月待ちの便り
+
+1. Leave an unsent draft in `対話`, then choose `体験 → 書斎に入る`.
+2. Inspect the window, letter and box. Shizuku reads both necessary conditions from the letter; hints are optional help, not required information.
+3. Select each moon bookmark and a slot, then press `この並びで開ける`. Try a wrong arrangement to show that the board stays intact and no penalty is applied.
+4. If needed, ask for a hint or enter a short consultation. Mock is scripted; OpenAI consultation uses the configured paid API. Only experience-local context is sent.
+5. Solve and read the quiet ending. Switch back to `対話` and confirm the draft and history remain. Returning to `体験` retains progress without automatically replaying old speech.
+
+The solution is left-to-right **half / full / crescent** after inspecting the letter. This is an introductory ordering puzzle, not a claim of a difficult escape game or autonomous Tool-calling Agent. Do not reveal the solution before the user tries it.
+
+Voice, VRM and the installed voice preferences are reused. With no VOICEVOX or VRM, use text and the placeholder. Progress is volatile: reload starts a fresh page; backend restart or idle expiry requires a new experience. A transport failure requires a state refresh rather than blindly resending a move. Restart asks for confirmation and affects only the experience.
+
+Owner acceptance remains separate from automated checks: does Shizuku feel calm, is the next action discoverable, and does the collaboration feel worthwhile? Real microphone accuracy and naturalness of all possible AI answers are not certified by the puzzle tests.
+
+## One-minute dialogue route
 
 1. State the problem and local-first policy in 10 seconds.
 2. Send `何ができるの？`, switch from `自然` to `詳しく`, and show Text, VOICEVOX, expression, gesture, and lip sync in 30 seconds.

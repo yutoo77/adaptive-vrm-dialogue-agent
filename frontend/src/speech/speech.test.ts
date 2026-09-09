@@ -102,6 +102,12 @@ function createGateway(overrides: Partial<SpeechGateway> = {}): SpeechGateway {
   };
 }
 
+function deferredBoolean() {
+  let resolve!: (value: boolean) => void;
+  const promise = new Promise<boolean>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
 describe("SpeechClient", () => {
   it("requests WAV audio from the backend and validates its header", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -338,6 +344,83 @@ describe("SpeechController", () => {
     expect(lipSync.stop).toHaveBeenCalled();
     controller.dispose();
     expect(lipSync.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a whole-reply speech during lip-sync preparation without starting late audio", async () => {
+    const waiting = deferredBoolean();
+    const audio = new FakeAudio();
+    const createAudio = vi.fn(() => audio);
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn().mockReturnValueOnce(waiting.promise).mockResolvedValue(true),
+      start: vi.fn(() => true), stop: vi.fn(), dispose: vi.fn(),
+    };
+    const controller = new SpeechController(createGateway(), observed.callbacks, lipSync, createAudio, {
+      createObjectURL: () => "blob:late", revokeObjectURL: vi.fn(),
+    });
+    controller.speak("切り替える前の返答");
+    await vi.waitFor(() => expect(lipSync.prepare).toHaveBeenCalledOnce());
+    controller.stop();
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "stopped", action: "none" });
+    waiting.resolve(true);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    expect(createAudio).not.toHaveBeenCalled();
+    expect(lipSync.start).not.toHaveBeenCalled();
+    controller.speak("新しい返答");
+    await vi.waitFor(() => expect(audio.play).toHaveBeenCalledOnce());
+    controller.dispose();
+  });
+
+  it("cancels a streaming sentence during lip-sync preparation", async () => {
+    const waiting = deferredBoolean();
+    const createAudio = vi.fn(() => new FakeAudio());
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn(() => waiting.promise), start: vi.fn(() => true), stop: vi.fn(), dispose: vi.fn(),
+    };
+    const controller = new SpeechController(createGateway(), observed.callbacks, lipSync, createAudio, {
+      createObjectURL: () => "blob:late", revokeObjectURL: vi.fn(),
+    });
+    controller.beginStreaming();
+    controller.appendStreamingText("準備中の文です。");
+    controller.completeStreaming("準備中の文です。");
+    await vi.waitFor(() => expect(lipSync.prepare).toHaveBeenCalledOnce());
+    controller.stop();
+    waiting.resolve(true);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    expect(createAudio).not.toHaveBeenCalled();
+    expect(observed.statuses.at(-1)?.state).toBe("stopped");
+    controller.dispose();
+  });
+
+  it("cancels a streaming replay during lip-sync preparation and permits a later explicit replay", async () => {
+    const waiting = deferredBoolean();
+    const audios: FakeAudio[] = [];
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn().mockResolvedValueOnce(true).mockReturnValueOnce(waiting.promise).mockResolvedValue(true),
+      start: vi.fn(() => true), stop: vi.fn(), dispose: vi.fn(),
+    };
+    const controller = new SpeechController(createGateway(), observed.callbacks, lipSync, () => {
+      const audio = new FakeAudio(); audios.push(audio); return audio;
+    }, { createObjectURL: () => "blob:replay", revokeObjectURL: vi.fn() });
+    controller.beginStreaming();
+    controller.appendStreamingText("再生済みの文です。");
+    controller.completeStreaming("再生済みの文です。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    audios[0]?.emit("ended");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("ready"));
+    controller.toggle();
+    await vi.waitFor(() => expect(lipSync.prepare).toHaveBeenCalledTimes(2));
+    controller.stop();
+    waiting.resolve(true);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    expect(audios).toHaveLength(1);
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "stopped", action: "replay" });
+    controller.toggle();
+    await vi.waitFor(() => expect(audios).toHaveLength(2));
+    expect(audios[1]?.play).toHaveBeenCalledOnce();
+    controller.dispose();
   });
 
   it("synthesizes and plays a closed sentence before the final reply arrives", async () => {

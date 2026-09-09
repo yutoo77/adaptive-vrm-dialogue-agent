@@ -81,6 +81,7 @@ export class VRMViewer {
   private currentModelHeight = 1.7;
   private currentModelBaseY = 0;
   private cameraSettings: CameraSettings = DEFAULT_CAMERA_SETTINGS;
+  private companionFraming = false;
   private animationFrameId: number | null = null;
   private loadGeneration = 0;
   private disposed = false;
@@ -140,6 +141,11 @@ export class VRMViewer {
     this.idleMotion.setContinuityScale(continuity.motion_scale);
   }
 
+  public setSceneAttention(target: { readonly x: number; readonly y: number } | null): void {
+    this.controller.setPointer(0, 0);
+    this.gazeMotion.setAttention(target);
+  }
+
   public returnToEmotionalBaseline(): void {
     this.performanceMotion.reset();
     const continuity = this.emotionalContinuity;
@@ -196,6 +202,11 @@ export class VRMViewer {
 
   public resetCamera(): CameraSettings {
     return this.setCameraSettings(DEFAULT_CAMERA_SETTINGS);
+  }
+
+  public setCompanionFraming(enabled: boolean): void {
+    this.companionFraming = enabled;
+    this.applyFraming();
   }
 
   public async loadDefaultModel(): Promise<void> {
@@ -409,8 +420,9 @@ export class VRMViewer {
     const modelY = this.currentModelBaseY + settings.modelOffset * this.currentModelHeight;
     this.currentVRM.scene.position.y = modelY;
     this.controller.setRootBaseY(modelY);
-    const targetY = height * 0.69 + settings.lookAtOffset * this.currentModelHeight;
-    const frameHeight = height * 0.92;
+    // A short companion viewport needs a face-readable crop, without changing user settings.
+    const targetY = height * (this.companionFraming ? 0.85 : 0.69) + settings.lookAtOffset * this.currentModelHeight;
+    const frameHeight = height * (this.companionFraming ? 0.44 : 0.92);
     const distance =
       (frameHeight / (2 * Math.tan(MathUtils.degToRad(this.camera.fov * 0.5)))) * settings.distance;
     this.camera.position.set(0, targetY + settings.heightOffset * this.currentModelHeight, distance);

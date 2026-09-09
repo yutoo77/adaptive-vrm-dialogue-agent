@@ -31,6 +31,7 @@ export class LipSyncController {
   private animationFrameId: number | null = null;
   private previousTimestamp: number | null = null;
   private smoothedWeight = 0;
+  private preparationId = 0;
   private disposed = false;
 
   public constructor(
@@ -40,7 +41,10 @@ export class LipSyncController {
 
   public async prepare(audio: Blob, timing: SpeechTiming | null = null): Promise<boolean> {
     if (this.disposed) return false;
-    this.envelope = parseWavEnvelope(await audio.arrayBuffer());
+    const preparationId = ++this.preparationId;
+    const buffer = await audio.arrayBuffer();
+    if (this.disposed || preparationId !== this.preparationId) return false;
+    this.envelope = parseWavEnvelope(buffer);
     this.timing = timing;
     return this.envelope !== null;
   }
@@ -56,6 +60,7 @@ export class LipSyncController {
   }
 
   public stop(): void {
+    this.preparationId += 1;
     if (this.animationFrameId !== null) this.scheduler.cancel(this.animationFrameId);
     this.animationFrameId = null;
     this.audio = null;

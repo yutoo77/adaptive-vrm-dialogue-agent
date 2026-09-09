@@ -80,6 +80,10 @@ if (-not $supportedNode) {
 Write-Host "Installing Backend dependencies..." -ForegroundColor Cyan
 Invoke-CheckedCommand `
     -FilePath $venvPython `
+    -ArgumentList @("-m", "pip", "install", "pip==26.2") `
+    -FailureMessage "The project pip security update failed."
+Invoke-CheckedCommand `
+    -FilePath $venvPython `
     -ArgumentList @("-m", "pip", "install", "-r", $requirements) `
     -FailureMessage "Backend dependency installation failed."
 

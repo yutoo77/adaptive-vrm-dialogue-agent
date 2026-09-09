@@ -17,6 +17,8 @@ from app.character_profile import DEFAULT_CHARACTER_PROFILE, CharacterProfile
 from app.config import Settings
 from app.continuity import EmotionalContinuityStore
 from app.conversation import ConversationMemoryStore
+from app.experience import UNAVAILABLE_NOTICE, ExperienceService, experience_router
+from app.experience_narration import ExperienceNarrator, build_experience_narrator
 from app.persistent_memory import (
     PersistentMemory,
     PersistentMemoryStore,
@@ -92,6 +94,8 @@ def create_app(
     emotional_continuity_store: EmotionalContinuityStore | None = None,
     persistent_memory_store: PersistentMemoryStore | None = None,
     character_profile: CharacterProfile = DEFAULT_CHARACTER_PROFILE,
+    experience_provider: ExperienceNarrator | None = None,
+    experience_service: ExperienceService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
     resolved_provider = provider or build_provider(resolved_settings, character_profile)
@@ -100,6 +104,17 @@ def create_app(
     resolved_conversation_store = conversation_store or ConversationMemoryStore()
     resolved_emotional_continuity_store = emotional_continuity_store or EmotionalContinuityStore()
     resolved_persistent_memory_store = persistent_memory_store or PersistentMemoryStore()
+    resolved_experience = experience_service or ExperienceService(
+        narrator=experience_provider or build_experience_narrator(resolved_settings, allow_external=provider is None),
+        timeout_seconds=resolved_settings.request_timeout_seconds,
+        unavailable_notice=(
+            UNAVAILABLE_NOTICE
+            if experience_provider is None
+            and resolved_settings.provider == "openai"
+            and (provider is not None or not resolved_settings.openai_api_key)
+            else None
+        ),
+    )
     state_lock = asyncio.Lock()
     active_dialogue_lock = asyncio.Lock()
     active_dialogues: dict[str, _ActiveDialogue] = {}
@@ -109,9 +124,12 @@ def create_app(
         try:
             yield
         finally:
-            close_speech = getattr(resolved_speech_provider, "aclose", None)
-            if close_speech is not None:
-                await close_speech()
+            try:
+                await resolved_experience.aclose()
+            finally:
+                close_speech = getattr(resolved_speech_provider, "aclose", None)
+                if close_speech is not None:
+                    await close_speech()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -120,6 +138,7 @@ def create_app(
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
+    app.include_router(experience_router(resolved_experience))
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
