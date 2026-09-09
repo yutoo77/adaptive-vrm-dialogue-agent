@@ -35,6 +35,7 @@ export class GazeMotionController {
   private targetX = 0;
   private targetY = 0;
   private reducedMotion = false;
+  private attention: { x: number; y: number; until: number } | null = null;
 
   public constructor(private readonly random: RandomSource = Math.random) {
     this.scheduleNextShift();
@@ -52,7 +53,15 @@ export class GazeMotionController {
     this.reducedMotion = enabled;
   }
 
+  public setAttention(target: { readonly x: number; readonly y: number } | null): void {
+    this.attention = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? { x: Math.max(-.35, Math.min(.35, target.x)), y: Math.max(-.25, Math.min(.25, target.y)), until: this.elapsed + 4 }
+      : null;
+    if (!this.attention) { this.targetX = 0; this.targetY = 0; this.scheduleNextShift(); }
+  }
+
   public reset(): void {
+    this.attention = null;
     this.behavior = "responsive";
     this.intensity = 0.35;
     this.elapsed = 0;
@@ -66,11 +75,14 @@ export class GazeMotionController {
   public update(delta: number): GazeMotionFrame {
     const elapsedDelta = Math.max(0, delta);
     this.elapsed += elapsedDelta;
-    if (this.elapsed >= this.nextShiftAt) this.chooseNextTarget();
+    if (this.attention && this.elapsed >= this.attention.until) {
+      this.attention = null;
+      this.chooseNextTarget();
+    } else if (!this.attention && this.elapsed >= this.nextShiftAt) this.chooseNextTarget();
 
     const motionScale = this.reducedMotion ? 0.18 : 1;
-    this.currentX = damp(this.currentX, this.targetX * motionScale, 2.6, elapsedDelta);
-    this.currentY = damp(this.currentY, this.targetY * motionScale, 2.6, elapsedDelta);
+    this.currentX = damp(this.currentX, (this.attention?.x ?? this.targetX) * motionScale, 2.6, elapsedDelta);
+    this.currentY = damp(this.currentY, (this.attention?.y ?? this.targetY) * motionScale, 2.6, elapsedDelta);
     return { offsetX: this.currentX, offsetY: this.currentY };
   }
 

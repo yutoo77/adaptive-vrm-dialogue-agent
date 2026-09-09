@@ -46,6 +46,8 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 ### 画面の操作
 
+上部の `対話 / 体験` で切り替えます。普段の対話画面はそのまま残し、別の体験「月待ちの便り」で、しずくと小箱を開ける短い謎解きを遊べます。モードを往復しても各画面の履歴・下書き・盤面は保持し、切替時には生成・発話・録音を停止します。ページ再読込後の進行保存はありません。
+
 会話欄の下からメッセージを送ります。PCではEnterで送信、Shift + Enterで改行できます。複数行の下書きは入力欄が広がり、日本語の変換確定では送信しません。送信中は同じボタンが停止に変わります。
 
 「設定」から音声と明示登録の記憶を開けます。「表示を調整」はモデル・表情・カメラへ直接移動します。設定を閉じても会話と下書きは維持され、Escapeでも閉じられます。音声エラーの「詳細」には元のエラーと回復方法を残しています。
@@ -65,11 +67,20 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 | Adaptive Performance | 感情6種、Gesture 4種、Voice Style 5種、強度0〜1、途中Cue最大2件の制限付きPlan |
 | Embodied Continuity | Session別RAM感情、最大2 Turnの減衰、明示変化の優先、反復Gesture抑制、視線6種、発話後の感情Baseline |
 | Memory | Session別直近10往復、決定的要約、明示登録だけのSQLite長期記憶、CRUD、文字重なり検索 |
+| Cooperative experience | 独立した「体験」タブ、3か所の調査、月の栞の配置、任意の3段階ヒント、決定的な正誤判定、静かな結末。APIなしでも完遂可能 |
 | UI / Visual identity | 白と青を軸にした会話ワークスペース、16px本文、静かな月のStage、音声・記憶・キャラクター設定のdialog、外部画像Assetなし |
 | Accessibility / UX | `prefers-reduced-motion`対応、演技強度3段階、Keyboard focus、文脈に応じた状態表示、段階的開示 |
 | Observability | 認識・初文・本文完了・発話開始の直近時間、Backend Request ID、Providerと失敗CodeのLog |
 
 Toolを選んで実行するAgent、RAG、Vision、Internet公開はまだ実装していません。`PerformancePlan`が制限付きであることと、Tool-using Agentが完成していることは別です。
+
+### 体験「月待ちの便り」
+
+`体験 → 書斎に入る` で始めます。窓・手紙・小箱を調べ、月の栞を選んで3つの枠へ置き、「この並びで開ける」で確認します。必要な条件は手紙にあり、時間制限や誤答の罰はありません。導入用の小さな問題で、本格的な謎解きの難易度はまだ目指していません。
+
+しずくへの自由な相談は、Mockなら固定応答、OpenAI設定時だけ従量課金のAPIを最大1回使います。送信範囲は今回の相談と体験内の履歴・開示済みの手掛かり・盤面。通常の会話や長期記憶は使いません。API停止時にも調査・配置・ヒントで最後まで遊べます。音声は共通の設定を使う既存のVOICEVOXで、新規ソフトウェアは不要です。
+
+AIは文章と控えめな演技を担当し、栞の移動や正解判定はしません。文章上の誤りやネタバレを完全には防げませんが、成功はサーバーが独立して判定します。[設計と制約](docs/EXPERIENCE_DESIGN.md)に、採用理由・取消・費用上限・保存範囲をまとめています。
 
 ## 技術的なポイント
 
@@ -200,6 +211,7 @@ Push-to-Talk用の`small` Modelも事前取得する場合は`-PrepareTranscript
 
 ```powershell
 py -3.12 -m venv .venv
+.\.venv\Scripts\python -m pip install pip==26.2
 .\.venv\Scripts\python -m pip install -r backend\requirements-dev.txt
 cd frontend
 npm ci

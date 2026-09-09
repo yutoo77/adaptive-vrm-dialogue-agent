@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新日: 2026-09-06
+更新日: 2026-09-09
 
 このRoadmapは機能数ではなく、各Vertical Sliceが「動く・復帰できる・評価できる・説明できる」状態になったかで進行を判断する。
 
@@ -11,6 +11,10 @@
 今後の主要開発は、このVisionを構成する能力を一つずつ完成させる。同時に複数の主要機能を進めず、既定Mock、Text fallback、利用者による保存・外部送信の制御を壊さない。
 
 ## 現在のRelease目標
+
+9月9日追記（現在の優先対象）: 利用者の承認を受け、通常対話を維持した別タブの協力体験「月待ちの便り」を追加する。調査・栞の配置・段階ヒント・決定的判定と、しずくへの短い相談を一話に絞る。声の設定やASRは既存機能を再利用し、認識速度改善・Vision・新しいAgent Frameworkは並行実装しない。自動検証後の次のGateは、本人による一話の試遊と、しずくの口調・演技・画面・操作感の確認。[設計](docs/EXPERIENCE_DESIGN.md)
+
+音声入力の待ち時間は未解決の課題として残す。体験の完成を理由に、自然な日常会話や音声認識精度まで評価済みとはしない。
 
 `v0.4 Natural Conversation`、`v0.5 Character Identity`、`v0.6 Embodied Continuity`を実装した。`月白 しずく v1.0.0`の本文・声・演技・UIを一つのProfileへ接続し、さらにSession内の感情を最大2 Turnだけ減衰して表情・視線・呼吸へ残す。Character Identityは実OpenAI 26/26・実VOICEVOX 10/10、Continuityは初回24/26のFailureを修正後26/26で確認した。次は独自VRMとのVisual統合、または実利用者による会話・聴取評価を独立Sliceとして進める。
 
@@ -37,6 +41,14 @@
 Public化と、動作中BackendをInternetへ公開することは別である。現在のBackendは`127.0.0.1`専用で、公開Serviceに必要な認証、Rate Limit、TLS、利用者分離を持たない。
 
 ## 完了したVertical Slice
+
+### Separate cooperative experience — 月待ちの便り
+
+- 通常対話の履歴・下書き・Avatar canvasを保持する `対話 / 体験`
+- 自作SVGの書斎、3か所の調査、3枚の栞、任意のヒント、誤答後の保持、静かな結末
+- 独立RAM、revision競合検知、取消、期限切れの明示、通常Memoryとの隔離
+- 固定処理だけでも完遂。自由相談だけ既存API、回数制限と固定応答へのFallback
+- 専用の音声再生状態と控えめな演技。本人の主観的な世界観・面白さの評価は未完了
 
 ### VRM foundation
 

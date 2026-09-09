@@ -39,12 +39,16 @@ export function createAppMarkup(): string {
             <p id="character-tagline" hidden></p>
           </div>
         </div>
-        <button id="settings-open" class="quiet-button" type="button" data-settings-target="voice" aria-haspopup="dialog">
+        <div class="workspace-tabs" role="tablist" aria-label="画面の切り替え">
+          <button id="mode-dialogue" type="button" role="tab" data-workspace-mode="dialogue" aria-controls="dialogue-workspace" aria-selected="true">対話</button>
+          <button id="mode-experience" type="button" role="tab" data-workspace-mode="experience" aria-controls="experience-workspace" aria-selected="false" tabindex="-1">体験</button>
+        </div>
+        <button id="settings-open" class="quiet-button" type="button" data-settings-target="voice" aria-haspopup="dialog" aria-label="設定">
           ${icon("settings")}<span>設定</span>
         </button>
       </header>
 
-      <main class="workspace">
+      <main id="dialogue-workspace" class="workspace" role="tabpanel" aria-labelledby="mode-dialogue">
         <section class="viewer-card" aria-label="キャラクタービューアー">
           <div id="character-viewport" class="character-viewport" tabindex="0">
             <div class="stage-surface" aria-hidden="true"></div>
@@ -149,6 +153,8 @@ export function createAppMarkup(): string {
           </section>
         </section>
       </main>
+
+      <main id="experience-workspace" role="tabpanel" aria-labelledby="mode-experience" hidden></main>
 
       <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
         <header class="settings-header">

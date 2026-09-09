@@ -1,0 +1,158 @@
+.experience-frame {
+  --exp-ink: #293952;
+  --exp-muted: #68768a;
+  --exp-blue: #46658c;
+  --exp-line: #dce3eb;
+  color: var(--exp-ink);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: #fafbfC;
+  padding: 22px 28px 30px;
+  scrollbar-gutter: stable;
+}
+.experience-frame [hidden] { display: none !important; }
+.experience-frame *, .experience-frame *::before, .experience-frame *::after { box-sizing: border-box; }
+.experience-frame button, .experience-frame textarea { font: inherit; }
+.experience-frame button { cursor: pointer; touch-action: manipulation; }
+.experience-frame button:disabled { cursor: default; opacity: .48; }
+.experience-frame button:focus-visible, .experience-frame summary:focus-visible, .experience-frame textarea:focus-visible {
+  outline: 3px solid #6c8cac;
+  outline-offset: 3px;
+}
+.experience-frame h1, .experience-frame h2, .experience-frame p { margin: 0; }
+.exp-heading { max-width: 1440px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.exp-kicker { color: var(--exp-muted); font-size: 12px; letter-spacing: .08em; margin-bottom: 5px !important; }
+.exp-heading h1 { font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: clamp(23px, 2.3vw, 31px); font-weight: 500; letter-spacing: .13em; line-height: 1.45; }
+.exp-layout { max-width: 1440px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(250px, 1fr); gap: 20px 28px; align-items: start; }
+.exp-story { min-width: 0; grid-column: 1; }
+.exp-scene { position: relative; overflow: hidden; border: 1px solid #e0e4e9; border-radius: 4px; isolation: isolate; }
+.exp-room { display: block; width: 100%; height: auto; }
+.exp-box-note { display: none; }
+.exp-scene[data-solved="true"] .exp-box-lid { transform: translateY(-24px); }
+.exp-scene[data-solved="true"] .exp-box-note { display: block; }
+.exp-scene-caption { position: absolute; right: 6%; top: 18%; font: 14px/2 "Yu Mincho", "Hiragino Mincho ProN", serif; letter-spacing: .13em; color: #6a7684; }
+.exp-scene[data-started="true"] .exp-scene-caption { display: none; }
+.exp-hotspot { position: absolute; display: flex; gap: 6px; align-items: center; justify-content: center; background: #fffffff2; color: var(--exp-ink); border: 1px solid #a4b5c9; border-radius: 3px; min-height: 40px; min-width: 62px; padding: 8px 13px; font-size: 14px !important; box-shadow: 0 3px 10px #3d527313; }
+.exp-hotspot:hover { background: #edf3fa; border-color: #738ca9; }
+.exp-window { left: 19%; top: 25%; }
+.exp-letter { left: 21%; bottom: 9%; }
+.exp-box { right: 18%; bottom: 11%; }
+.exp-inspected { color: #71836e; }
+.exp-scene[data-focus="window"] .exp-window, .exp-scene[data-focus="letter"] .exp-letter, .exp-scene[data-focus="box"] .exp-box { border-color: #52759d; box-shadow: 0 0 0 3px #52759d20; }
+.exp-landing { padding: 27px 4px 6px; }
+.exp-landing h2 { font: 500 clamp(20px, 2vw, 25px)/1.75 "Yu Mincho", "Hiragino Mincho ProN", serif; letter-spacing: .06em; }
+.exp-landing > p:not(.exp-fine) { margin-top: 15px; font-size: 15px; line-height: 1.9; color: #536278; }
+.exp-landing > button { margin: 22px 0 15px; min-width: 176px; }
+.exp-fine { font-size: 12px; color: var(--exp-muted); line-height: 1.7; overflow-wrap: anywhere; }
+.exp-primary, .exp-secondary { min-height: 42px; padding: 10px 16px; border: 1px solid transparent; border-radius: 5px; font-weight: 500; font-size: 14px !important; line-height: 1.4; }
+.exp-primary { color: #fff; background: var(--exp-blue); border-color: var(--exp-blue); }
+.exp-primary:hover:not(:disabled) { background: #365477; }
+.exp-primary span { padding-left: 18px; }
+.exp-secondary { color: #425d7f; border-color: #c9d4e1; background: #fff; }
+.exp-secondary:hover:not(:disabled) { background: #f0f5fa; }
+.exp-text-button { min-height: 36px; padding: 5px 8px; color: #557096; background: transparent; border: 0; text-decoration: underline; text-underline-offset: 4px; font-size: 13px !important; white-space: nowrap; }
+.exp-play { padding: 18px 2px 0; }
+.exp-board-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.exp-board-heading h2 { font-size: 17px; font-weight: 600; }
+.exp-instruction { font-size: 13px; line-height: 1.65; color: #5a6d85; margin: 8px 0 13px !important; min-height: 21px; }
+.exp-moons, .exp-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.exp-moons { margin-bottom: 15px; }
+.exp-moon { border: 1px solid #dadfdc; border-radius: 4px; color: #6a7391; background: #f8f6ef; padding: 11px 6px 9px; min-width: 0; display: grid; justify-items: center; gap: 3px; }
+.exp-moon > span { color: #44546e; font-size: 14px; }
+.exp-moon > small { color: #757d87; font-size: 11px; }
+.exp-moon[aria-pressed="true"] { background: #edf2f9; border: 2px solid #6682a5; padding: 10px 5px 8px; box-shadow: 0 2px 8px #57759415; }
+.exp-moon:hover:not(:disabled) { border-color: #91a5bf; }
+.exp-slot { border: 1px dashed #b5c3d4; background: #eff3f8; border-radius: 4px; color: #8498b1; min-height: 77px; padding: 6px; position: relative; min-width: 0; display: grid; justify-items: center; gap: 2px; }
+.exp-slot > small { position: absolute; left: 9px; top: 7px; font-size: 12px; color: #6e8098; }
+.exp-slot-moon { min-height: 31px; display: flex; align-items: center; font-size: 25px; }
+.exp-slot-label { font-size: 12px; color: #596c86; }
+.exp-slot[data-filled="true"] { border-style: solid; background: #f9fafc; color: #6a7391; }
+.exp-slot:hover:not(:disabled) { border-color: #5479a3; background: #e7eef7; }
+.exp-slot-help { font-size: 11px; line-height: 1.6; color: #738197; margin: 7px 0 13px !important; }
+.exp-board-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.exp-clue { margin-top: 14px; border-top: 1px solid var(--exp-line); padding-top: 11px; }
+.experience-frame summary { cursor: pointer; color: #607593; font-size: 13px; padding: 3px 0; width: fit-content; max-width: 100%; }
+.exp-clue p { padding: 10px 0 1px; font-size: 14px; line-height: 1.85; color: #52637a; white-space: pre-wrap; overflow-wrap: anywhere; }
+.exp-ending { display: flex; align-items: center; gap: 16px; padding: 22px 2px 10px; color: #7685a6; }
+.exp-ending h2 { font: 500 21px/1.7 "Yu Mincho", "Hiragino Mincho ProN", serif; color: #465875; }
+.exp-ending p { color: #67758a; font-size: 13px; line-height: 1.8; margin-top: 4px; }
+.exp-companion { grid-column: 2; grid-row: 1; min-width: 0; position: sticky; top: 0; display: flex; flex-direction: column; gap: 16px; }
+#experience-avatar-slot { min-width: 0; }
+.experience-frame #experience-avatar-slot > .viewer-card { height: clamp(360px, 65vh, 700px); min-height: 360px; border: 1px solid #e0e5ee; border-radius: 5px; overflow: hidden; background: #eff3f9; }
+.experience-frame #experience-avatar-slot .character-viewport { min-height: 270px; }
+.experience-frame[data-experience-started="true"] #experience-avatar-slot > .viewer-card { height: clamp(240px, 33vh, 360px); min-height: 240px; }
+.experience-frame[data-experience-started="true"] #experience-avatar-slot .character-viewport { min-height: 180px; }
+.exp-conversation { min-width: 0; border-top: 1px solid var(--exp-line); padding-top: 14px; }
+.exp-reply-heading { display: flex; gap: 10px; align-items: center; margin-bottom: 7px; flex-wrap: wrap; }
+.exp-reply-heading h2 { font-size: 14px; color: #4a6386; font-weight: 600; }
+.exp-reply-heading .exp-text-button { margin-left: auto; min-height: 26px; }
+.exp-reply { font-size: 16px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 54px; max-height: 178px; overflow-y: auto; scrollbar-gutter: stable; }
+.exp-statuses { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 7px 0 11px; font-size: 12px; line-height: 1.6; color: #6b7b91; }
+.exp-statuses span:empty { display: none; }
+.exp-conversation label { font-size: 12px; color: #63758f; display: block; margin-bottom: 6px; }
+.exp-input-row { display: flex; gap: 8px; align-items: stretch; }
+.exp-input-row textarea { resize: vertical; min-height: 88px; max-height: 200px; min-width: 0; width: 100%; border: 1px solid #cbd5e3; border-radius: 5px; padding: 11px 12px; background: #fff; color: var(--exp-ink); font-size: 15px; line-height: 1.55; }
+.exp-input-row textarea::placeholder { color: #8997ab; }
+.exp-input-actions { display: flex; flex-direction: column; gap: 6px; flex: 0 0 98px; }
+.exp-input-actions button { padding-inline: 8px; }
+#experience-provider { margin-top: 9px; }
+.exp-history { margin-top: 12px; }
+.exp-history ol { list-style: none; padding: 0; margin: 12px 0 0; max-height: 300px; overflow: auto; }
+.exp-history li { padding: 9px 0; border-bottom: 1px solid #e5eaf0; }
+.exp-history li > span { font-size: 11px; color: #6c809d; }
+.exp-history li > p { font-size: 13px; line-height: 1.75; padding-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.exp-feedback { margin-top: 16px; padding: 12px 14px; background: #edf2f7; color: #4a6280; border-left: 3px solid #95abc3; font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+.exp-feedback[data-error="true"] { background: #faf5ea; color: #7a6341; border-left-color: #bca477; }
+.exp-feedback button { margin-top: 9px; }
+.experience-frame .exp-restart-dialog { max-width: min(440px, calc(100vw - 32px)); border: 1px solid #c9d4e2; border-radius: 7px; padding: 25px; color: var(--exp-ink); box-shadow: 0 18px 60px #1d304b26; }
+.experience-frame .exp-restart-dialog::backdrop { background: #23314730; }
+.exp-restart-dialog h2 { font-size: 19px; margin-bottom: 12px; }
+.exp-restart-dialog p { font-size: 15px; line-height: 1.8; }
+.exp-restart-dialog form > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; flex-wrap: wrap; }
+@media (min-width: 1300px) { .exp-layout { grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr); } }
+@media (max-width: 1024px) {
+  .experience-frame { padding: 18px 20px 26px; }
+  .exp-layout { gap: 20px; grid-template-columns: minmax(0, 1.45fr) minmax(230px, 1fr); }
+  .exp-hotspot { min-height: 36px; min-width: 55px; padding: 6px 9px; font-size: 13px !important; }
+  .exp-scene-caption { font-size: 12px; right: 3%; }
+  .exp-board-actions > button { flex: 1 1 auto; }
+}
+@media (max-width: 760px) {
+  .experience-frame { padding: 18px 18px 26px; scrollbar-gutter: auto; }
+  .exp-heading { margin-bottom: 15px; }
+  .exp-layout { display: flex; flex-direction: column; gap: 20px; }
+  .exp-story, .exp-conversation, .exp-companion { width: 100%; }
+  .exp-companion { position: static; }
+  .experience-frame #experience-avatar-slot > .viewer-card { height: 290px; min-height: 290px; }
+  .experience-frame #experience-avatar-slot .character-viewport { min-height: 210px; }
+  .experience-frame[data-experience-started="true"] #experience-avatar-slot > .viewer-card { height: 270px; min-height: 270px; }
+  .experience-frame[data-experience-started="true"] #experience-avatar-slot .character-viewport { min-height: 195px; }
+  .exp-landing { padding-top: 22px; }
+  .exp-scene-caption { right: 5%; }
+  .exp-conversation { padding-top: 15px; }
+  .exp-moon { padding-block: 9px 7px; }
+  .exp-moon[aria-pressed="true"] { padding-block: 8px 6px; }
+}
+@media (max-width: 390px) {
+  .experience-frame { padding-inline: 12px; }
+  .exp-heading { gap: 5px; }
+  .exp-heading h1 { font-size: 24px; letter-spacing: .06em; }
+  .exp-kicker { font-size: 11px; }
+  .exp-room { min-height: 155px; object-fit: cover; }
+  .exp-hotspot { min-height: 38px; padding: 6px 9px; font-size: 12px !important; }
+  .exp-window { left: 15%; top: 24%; }
+  .exp-letter { left: 17%; bottom: 8%; }
+  .exp-box { right: 14%; bottom: 10%; }
+  .exp-scene-caption { font-size: 11px; right: 4%; }
+  .exp-moons, .exp-slots { gap: 7px; }
+  .exp-moon > span { font-size: 12px; }
+  .exp-instruction { font-size: 12px; min-height: 39px; }
+  .exp-board-heading h2 { font-size: 16px; }
+  .exp-board-heading .exp-fine { font-size: 11px; }
+  .exp-input-row { flex-direction: column; }
+  .exp-input-actions { flex-direction: row; flex-basis: auto; justify-content: flex-end; }
+  .exp-input-actions button { min-width: 92px; }
+  .exp-landing > p:not(.exp-fine) { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .experience-frame *, .experience-frame *::before, .experience-frame *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }

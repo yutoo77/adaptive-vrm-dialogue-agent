@@ -33,6 +33,10 @@ button, summary, a, input, select, textarea, [tabindex] { outline-offset: 3px; }
 
 .app-shell { display: flex; flex-direction: column; width: min(1600px, 100%); height: 100dvh; min-height: 640px; margin: 0 auto; padding: 0 28px 24px; }
 .app-header { display: flex; min-height: 84px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 20px; padding: 0 4px; }
+.workspace-tabs { display: flex; align-self: stretch; align-items: center; gap: 4px; margin-left: auto; }
+.workspace-tabs button { min-height: 40px; padding: 8px 20px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: 14px; }
+.workspace-tabs button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); }
+.workspace-tabs button:hover { background: var(--surface-soft); }
 .brand-block { display: flex; min-width: 0; align-items: center; gap: 12px; }
 .brand-copy { min-width: 0; }
 .brand-title-row { display: flex; align-items: baseline; gap: 10px; }
@@ -280,6 +284,12 @@ input[type="range"] { width: 100%; min-height: 28px; accent-color: var(--accent)
   .stage-settings-button span { display: none; }
 }
 @media (max-width: 760px) {
+  .workspace-tabs { gap: 0; }
+  .workspace-tabs button { padding: 8px 12px; font-size: 13px; }
+  .app-header > #settings-open { padding: 8px; }
+  .app-header > #settings-open span { display: none; }
+  .app-header:has(.workspace-tabs) { gap: 8px; }
+  .app-header:has(.workspace-tabs) .brand-copy p { display: none; }
   .app-shell { min-height: 680px; padding: 0; }
   .app-header { min-height: 68px; gap: 12px; padding: 10px 16px; }
   .brand-monogram { width: 36px; height: 36px; border-radius: 12px; font-size: 17px; }
@@ -323,6 +333,8 @@ input[type="range"] { width: 100%; min-height: 28px; accent-color: var(--accent)
   .toast { right: 16px; bottom: 16px; max-width: calc(100vw - 32px); }
 }
 @media (max-width: 360px) {
+  .workspace-tabs button { padding: 8px 9px; }
+  .app-header:has(.workspace-tabs) .brand-monogram { display: none; }
   .brand-copy p { display: none; }
   .app-header { min-height: 60px; }
   .stage-settings-button span { display: none; }
