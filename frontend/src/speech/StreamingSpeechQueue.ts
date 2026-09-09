@@ -48,6 +48,7 @@ export class StreamingSpeechQueue {
   private audio: SpeechAudio | null = null;
   private audioUrl: string | null = null;
   private activePlaybackResolve: (() => void) | null = null;
+  private replayOperationId: number | null = null;
   private session: StreamingSpeechSession | null = null;
   private replaySegments: PreparedSpeechSegment[] = [];
   private latestText = "";
@@ -124,7 +125,11 @@ export class StreamingSpeechQueue {
     if (this.cancelActive(true)) return true;
     if (this.disposed || !this.replaySegments.length) return false;
     const operationId = ++this.operationId;
-    void this.playReplay(operationId);
+    // Replay also has asynchronous gaps before any Audio element exists.
+    this.replayOperationId = operationId;
+    void this.playReplay(operationId).finally(() => {
+      if (this.replayOperationId === operationId) this.replayOperationId = null;
+    });
     return true;
   }
 
@@ -375,9 +380,11 @@ export class StreamingSpeechQueue {
       this.requestController !== null ||
       this.audio !== null ||
       this.session !== null ||
+      this.replayOperationId !== null ||
       this.activePlaybackResolve !== null;
     if (!wasActive) return false;
     this.operationId += 1;
+    this.replayOperationId = null;
     this.session?.segmenter.discard();
     this.session = null;
     this.requestController?.abort();

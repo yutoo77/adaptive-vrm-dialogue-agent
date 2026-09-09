@@ -194,11 +194,12 @@ export class SpeechController {
     try {
       const synthesis = await this.gateway.synthesize(text, controller.signal, voice);
       if (!this.isCurrent(operationId)) return;
+      // Keep this operation cancellable while the WAV is being prepared for lip sync.
+      await this.prepareLipSync(synthesis.audio, synthesis.timing, operationId);
+      if (!this.isCurrent(operationId)) return;
       this.requestController = null;
       this.latestAudio = synthesis.audio;
       this.latestTiming = synthesis.timing;
-      await this.prepareLipSync(synthesis.audio, synthesis.timing, operationId);
-      if (!this.isCurrent(operationId)) return;
       this.callbacks.onLatency?.(Math.max(0, Math.round(performance.now() - startedAt)));
       await this.playLatest(operationId, true);
     } catch (error: unknown) {

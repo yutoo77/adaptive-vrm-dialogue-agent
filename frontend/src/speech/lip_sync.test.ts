@@ -100,6 +100,48 @@ describe("LipSyncController", () => {
     scheduled.shift()?.(32);
     expect(frames.at(-1)?.viseme).toBe("i");
   });
+
+  it("does not commit preparation that finishes after stop", async () => {
+    let release!: (buffer: ArrayBuffer) => void;
+    const pending = new Promise<ArrayBuffer>((resolve) => { release = resolve; });
+    const blob = new Blob();
+    vi.spyOn(blob, "arrayBuffer").mockReturnValue(pending);
+    const controller = new LipSyncController(
+      { onViseme: vi.fn(), onReset: vi.fn() }, { request: vi.fn(() => 1), cancel: vi.fn() },
+    );
+    const preparation = controller.prepare(blob);
+    controller.stop();
+    release(createPcm16Wav(Array<number>(60).fill(0.4)));
+    expect(await preparation).toBe(false);
+    expect(controller.start({ currentTime: 0 })).toBe(false);
+    controller.dispose();
+  });
+
+  it("keeps the newest timing when an older WAV preparation resolves late", async () => {
+    let release!: (buffer: ArrayBuffer) => void;
+    const pending = new Promise<ArrayBuffer>((resolve) => { release = resolve; });
+    const oldBlob = new Blob();
+    vi.spyOn(oldBlob, "arrayBuffer").mockReturnValue(pending);
+    const scheduled: FrameRequestCallback[] = [];
+    const onViseme = vi.fn();
+    const controller = new LipSyncController(
+      { onViseme, onReset: vi.fn() },
+      { request: (callback) => (scheduled.push(callback), scheduled.length), cancel: vi.fn() },
+    );
+    const oldPreparation = controller.prepare(oldBlob, {
+      durationMs: 1000, phraseBoundariesMs: [], visemes: [{ viseme: "a", startMs: 0, durationMs: 500 }],
+    });
+    const buffer = createPcm16Wav(Array<number>(1000).fill(0.4));
+    expect(await controller.prepare(new Blob([buffer]), {
+      durationMs: 1000, phraseBoundariesMs: [], visemes: [{ viseme: "o", startMs: 0, durationMs: 500 }],
+    })).toBe(true);
+    release(buffer);
+    expect(await oldPreparation).toBe(false);
+    expect(controller.start({ currentTime: 0.1 })).toBe(true);
+    scheduled.shift()?.(16);
+    expect(onViseme).toHaveBeenLastCalledWith("o", expect.any(Number));
+    controller.dispose();
+  });
 });
 
 describe("resolveVisemeAt", () => {
