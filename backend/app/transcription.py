@@ -37,6 +37,8 @@ class TranscriptionProvider(Protocol):
 
     def transcribe(self, audio: bytes, media_type: str, request_id: str) -> TranscriptionResult: ...
 
+    def prepare(self) -> None: ...
+
 
 class FasterWhisperTranscriptionProvider:
     name = "faster-whisper"
@@ -55,12 +57,7 @@ class FasterWhisperTranscriptionProvider:
 
     def transcribe(self, audio: bytes, media_type: str, request_id: str) -> TranscriptionResult:
         del media_type, request_id
-        if not self._inference_lock.acquire(blocking=False):
-            raise TranscriptionProviderError(
-                429,
-                "transcription_busy",
-                "前の音声をまだ処理しています。少し待ってから、もう一度録音してください。",
-            )
+        self._claim_capacity()
         # The worker owns capacity until it actually finishes, even if HTTP is cancelled.
         try:
             model = self._get_model()
@@ -97,7 +94,24 @@ class FasterWhisperTranscriptionProvider:
             audio_duration_seconds=round(float(info.duration), 3),
         )
 
-    def _get_model(self) -> WhisperModel:
+    def prepare(self) -> None:
+        if self.model_loaded:
+            return
+        self._claim_capacity()
+        try:
+            self._get_model(local_files_only=True)
+        finally:
+            self._inference_lock.release()
+
+    def _claim_capacity(self) -> None:
+        if not self._inference_lock.acquire(blocking=False):
+            raise TranscriptionProviderError(
+                429,
+                "transcription_busy",
+                "前の音声をまだ処理しています。少し待ってから、もう一度録音してください。",
+            )
+
+    def _get_model(self, *, local_files_only: bool = False) -> WhisperModel:
         if self._model is not None:
             return self._model
         with self._model_lock:
@@ -107,8 +121,15 @@ class FasterWhisperTranscriptionProvider:
                         self.model_name,
                         device=self.device,
                         compute_type=self.compute_type,
+                        local_files_only=local_files_only,
                     )
                 except Exception as error:
+                    if local_files_only:
+                        raise TranscriptionProviderError(
+                            503,
+                            "transcription_model_not_cached",
+                            "取得済みの音声認識モデルを読み込めません。READMEのモデル準備手順と設定を確認してください。",
+                        ) from error
                     raise TranscriptionProviderError(
                         503,
                         "transcription_model_unavailable",
