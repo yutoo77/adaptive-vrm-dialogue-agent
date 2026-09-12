@@ -275,6 +275,10 @@ cd backend
 
 認識中の取消は、画面への結果反映を止めます。端末内の計算まで即座に止まる保証はありません。前の認識が残っている場合、次の録音は順番待ちにせず「前の音声を処理中」と返します。少し待って録り直すか、文字入力で続けられます。[処理待ちをためない設計](docs/evaluations/transcription-capacity-2026-09-13.md)
 
+デモの前に取得済みモデルを読み込む場合は、Repository直下で `.\start_demo.ps1 -PrepareVoiceInput` を使います。起動済みでも使え、同じBackendにモデルを保持します。録音・Download・課金はなく、CPU処理とRAM使用が増えます。未取得/準備失敗でもText Demoは続けられます。[事前読込](docs/evaluations/transcription-preparation-2026-09-13.md)
+
+現在のCPU認識には、準備後も数秒の待ちがあります。軽量設定の小規模比較では大幅短縮が得られず、認識品質の既定値は変えていません。[計測条件と結果](docs/evaluations/transcription-latency-2026-09-13.md)
+
 ### OpenAI Provider
 
 既定はMockです。実APIを使う場合だけ、同じPowerShellで環境変数を設定します。

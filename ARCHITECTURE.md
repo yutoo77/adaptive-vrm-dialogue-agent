@@ -98,6 +98,8 @@ Push-to-Talkは別経路で、利用者のButton操作後だけ`getUserMedia`を
 
 faster-whisperは一つのProviderにつき同時実行1件・待機0件。Model読込から遅延Segment列挙までWorkerが非待機Lockを保持し、追加Requestへ429 `transcription_busy`を返す。HTTP Taskを取り消しても実Worker終了前にLockを解放しない。両タブに待機理由を示し、DraftとText fallbackを残す。これはCPU認識の滞留対策であり、Internet向けRate Limitや推論中断・推論高速化ではない。[検証](docs/evaluations/transcription-capacity-2026-09-13.md)
 
+明示的な`POST /api/transcription/prepare`は、同じProviderのModelをCached-onlyで読み込む。Health GETは読込しない。起動Scriptの`-PrepareVoiceInput`から任意で呼び、準備失敗は警告だけでText起動を妨げない。Model準備もWorkerの容量を実終了まで保持する。通常起動/画面/録音の既定値は変更しない。[事前読込と限界](docs/evaluations/transcription-preparation-2026-09-13.md)
+
 Frontendの各Controllerは`performance.now()`でBrowser側の利用者体験時間を測り、UIの診断欄へ認識、最初のText、本文完了、音声再生開始を独立して渡す。Backend Logも初文・本文完了・Commit完了を分ける。会話本文や音声を計測用に追加保存せず、最適化対象を判断する一時表示だけを行う。
 
 ## Repository構成

@@ -747,6 +747,23 @@ def create_app(
             message="音声はLocal Backend内で認識し、保存しません。",
         )
 
+    @app.post("/api/transcription/prepare", response_model=TranscriptionHealthResponse)
+    async def prepare_transcription(response: Response) -> TranscriptionHealthResponse:
+        request_id = uuid4().hex
+        started_at = perf_counter()
+        try:
+            await asyncio.to_thread(resolved_transcription_provider.prepare)
+        except TranscriptionProviderError as error:
+            raise HTTPException(
+                status_code=error.status_code,
+                detail={"code": error.code, "message": error.public_message, "request_id": request_id},
+            ) from error
+        logger.info(
+            "transcription_prepared request_id=%s model=%s latency_ms=%s",
+            request_id, resolved_transcription_provider.model_name, round((perf_counter() - started_at) * 1000),
+        )
+        return await transcription_health(response)
+
     @app.post("/api/transcription", response_model=TranscriptionResponse)
     async def transcription(audio: Annotated[UploadFile, File()]) -> TranscriptionResponse:
         request_id = uuid4().hex

@@ -18,6 +18,7 @@
 - Frontend 187 tests、型/lint/build成功。機械可読なCodeでUI理由を選び、Backend文章の文字列一致には依存しない。
 - 対象Browser 4件成功。新規2件は両タブで429を注入し、Draft保持、Text継続、Track解放、自動再送なし、明示再録音による成功を確認。直前Sliceの全32件Runとは区別し、Releaseでは全34件を再確認する。
 - Fakeの音声/Providerだけを使い、実マイク、既存録音、モデルDownload、外部AI呼出はなし。
+- Release: PR #14のCIで全34 Browser tests成功（4.6分、flaky表示なし）。Backend/Frontend/Secret scanも成功し、`6ef2829`でmainへ統合。
 
 ## 限界
 

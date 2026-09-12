@@ -1,3 +1,5 @@
+param([switch]$PrepareVoiceInput)
+
 $ErrorActionPreference = "Stop"
 
 $backendPath = Join-Path $PSScriptRoot "backend"
@@ -72,6 +74,19 @@ function Test-AdaptiveFrontend {
     }
 }
 
+function Initialize-VoiceInput {
+    if (-not $PrepareVoiceInput) { return }
+    Write-Host "Preparing the cached voice-input model (no recording or download)..." -ForegroundColor Cyan
+    try {
+        $prepared = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/transcription/prepare" -Method Post -TimeoutSec 45
+        if (-not $prepared.model_loaded) { throw "Model was not prepared." }
+        Write-Host "Voice-input model is loaded in the running backend." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Voice preloading was unavailable. Text demo can still run. See README model preparation steps."
+    }
+}
+
 if (-not (Test-Path -LiteralPath $pythonPath)) {
     throw "Python environment not found. Create .venv by following README.md."
 }
@@ -88,6 +103,7 @@ $frontendListenerIds = Get-ListenerProcessIds -Port 5173
 if ($frontendListenerIds.Count -gt 0) {
     $backendIsReady = $backendListenerIds.Count -eq 1 -and (Test-AdaptiveBackend -ProcessId $backendListenerIds[0])
     if ($frontendListenerIds.Count -eq 1 -and (Test-AdaptiveFrontend) -and $backendIsReady) {
+        Initialize-VoiceInput
         Write-Host "Adaptive Character Lab is already running." -ForegroundColor Green
         Write-Host "Demo: $frontendUrl" -ForegroundColor Cyan
         exit 0
@@ -145,6 +161,7 @@ try {
     }
 
     Write-Host "Backend: $($health.provider) / $($health.model)" -ForegroundColor Cyan
+    Initialize-VoiceInput
     if ($reusedBackend) {
         Write-Host "Recovered a backend left by an earlier launch." -ForegroundColor DarkYellow
     }

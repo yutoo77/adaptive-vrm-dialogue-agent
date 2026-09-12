@@ -42,6 +42,8 @@ If a response remains in `thinking`, the send button changes to `応答を停止
 
 Press the microphone button, say a short phrase, and let silence stop the recording. Show that the recognized text returns to the input box instead of being sent automatically. This gives the user a chance to correct a recognition error.
 
+Before a voice demo, optionally run `.\start_demo.ps1 -PrepareVoiceInput` from the repository root. It loads only the cached recognition model into the running Backend, without recording or downloading; failure leaves Text available. This moves model loading earlier, not the remaining CPU inference or silence-detection delay. See the [measured limits](evaluations/transcription-latency-2026-09-13.md).
+
 If microphone permission or transcription fails, show that Text input remains available.
 
 ### 4. Memory and user control — 30 seconds
