@@ -4,6 +4,7 @@ const paths = {
   conversation: '<path d="M21 11a8 8 0 0 1-8 8H5l-2 2V11a9 8 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/>',
   newConversation: '<path d="M12 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m15 4 5 5M9 15l1-5L18 2l4 4-8 8Z"/>',
   microphone: '<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6"/>',
+  retry: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 14 6M4 12a8 8 0 0 0 14 6"/>',
   send: '<path d="M12 20V4M5 11l7-7 7 7"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',

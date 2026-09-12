@@ -22,11 +22,19 @@ export class TranscriptionClient {
   ) {}
 
   public async getHealth(signal?: AbortSignal): Promise<TranscriptionHealth> {
-    const payload = await this.request("/transcription/health", { method: "GET" }, signal, 5_000);
-    if (!isTranscriptionHealth(payload)) {
-      throw new TranscriptionApiError("Backendから不正な音声入力情報が返りました。");
+    // Only this read-only probe retries. Never repeat a recording upload automatically.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const payload = await this.request("/transcription/health", { method: "GET", cache: "no-store" }, signal, 5_000);
+        if (!isTranscriptionHealth(payload)) {
+          throw new TranscriptionApiError("音声入力の接続情報が想定した形式と異なります。再接続してください。", 200, "client_invalid_health");
+        }
+        return payload;
+      } catch (error: unknown) {
+        if (attempt >= 1 || signal?.aborted || !canRetryHealth(error)) throw error;
+        await waitForHealthRetry(signal);
+      }
     }
-    return payload;
   }
 
   public async transcribe(audio: Blob, signal?: AbortSignal): Promise<TranscriptionResponse> {
@@ -50,6 +58,7 @@ export class TranscriptionClient {
     parentSignal: AbortSignal | undefined,
     timeoutMs: number,
   ): Promise<unknown> {
+    parentSignal?.throwIfAborted();
     const controller = new AbortController();
     const abortFromParent = (): void => controller.abort(parentSignal?.reason);
     parentSignal?.addEventListener("abort", abortFromParent, { once: true });
@@ -57,21 +66,47 @@ export class TranscriptionClient {
 
     try {
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, signal: controller.signal });
-      const payload: unknown = await response.json().catch(() => null);
+      let payload: unknown;
+      try { payload = await response.json(); }
+      catch {
+        if (response.ok) throw new TranscriptionApiError("音声認識Backendの返答をJSONとして読み取れませんでした。接続先を確認してください。", response.status, "client_invalid_json");
+        payload = null;
+      }
+      controller.signal.throwIfAborted();
       if (!response.ok) throw createApiError(response.status, payload);
       return payload;
     } catch (error: unknown) {
-      if (error instanceof TranscriptionApiError) throw error;
-      if (controller.signal.aborted && !parentSignal?.aborted) {
+      if (parentSignal?.aborted) throw parentSignal.reason;
+      if (controller.signal.aborted) {
         throw new TranscriptionApiError("音声認識が時間内に完了しませんでした。", 504, "client_timeout");
       }
-      if (parentSignal?.aborted) throw error;
-      throw new TranscriptionApiError("音声認識Backendへ接続できませんでした。起動状態を確認してください。");
+      if (error instanceof TranscriptionApiError) throw error;
+      throw new TranscriptionApiError("音声認識Backendへ接続できませんでした。起動状態を確認してください。", null, "client_unreachable");
     } finally {
       globalThis.clearTimeout(timeout);
       parentSignal?.removeEventListener("abort", abortFromParent);
     }
   }
+}
+
+function canRetryHealth(error: unknown): boolean {
+  return error instanceof TranscriptionApiError &&
+    !(error.status !== null && error.status >= 400 && error.status < 500);
+}
+
+function waitForHealthRetry(signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const abort = (): void => {
+      globalThis.clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = globalThis.setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, 350);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function createApiError(status: number, payload: unknown): TranscriptionApiError {

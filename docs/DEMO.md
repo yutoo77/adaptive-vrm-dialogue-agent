@@ -92,6 +92,8 @@ Profile v1.1.0 has [a separate conversation-style evaluation](evaluations/conver
 | VRM is missing | Continue with the 3D placeholder, then select a permitted `.vrm` file. |
 | VOICEVOX is unavailable | Continue the Text conversation; start VOICEVOX and reload for voice output. |
 | Microphone is denied or silent | Use Text input. The app does not require Voice to continue. |
+| Voice-input connection check fails | Use the reconnect control in place of the microphone. Drafts and puzzle progress remain; reconnect does not record. A later microphone press starts recording. |
+| Previous transcription is still computing | Wait briefly and record again, or continue by Text. Cancelling the UI does not forcibly interrupt local inference. The app refuses another queued job and does not resend audio automatically. |
 | Backend is offline | Keep the VRM viewer open, restart `start_demo.ps1`, then retry. |
 | Port 8000 or 5173 belongs to another app | Stop that app or identify its PID; the launcher will not kill an unknown process. |
 | Browser blocks autoplay | Use the replay button for the generated audio. |

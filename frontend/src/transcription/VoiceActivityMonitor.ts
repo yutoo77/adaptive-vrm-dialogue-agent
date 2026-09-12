@@ -95,20 +95,27 @@ export class BrowserVoiceActivityMonitor implements VoiceActivityMonitor {
   public start(stream: MediaStream, callbacks: VoiceActivityCallbacks): void {
     this.stop();
     const context = new AudioContext();
-    const analyser = context.createAnalyser();
-    const source = context.createMediaStreamSource(stream);
-    analyser.fftSize = 1024;
-    source.connect(analyser);
     this.audioContext = context;
-    this.source = source;
+    let analyser: AnalyserNode;
+    try {
+      analyser = context.createAnalyser();
+      this.source = context.createMediaStreamSource(stream);
+      analyser.fftSize = 1024;
+      this.source.connect(analyser);
+    } catch (error: unknown) {
+      this.stop();
+      throw error;
+    }
     this.detector.reset(performance.now());
     if (context.state === "suspended") void context.resume().catch(() => undefined);
 
     const samples = new Float32Array(analyser.fftSize);
     const observe = (nowMs: number): void => {
+      if (this.audioContext !== context) return;
       analyser.getFloatTimeDomainData(samples);
       const event = this.detector.update(rootMeanSquare(samples), nowMs);
       if (event === "speech-start") callbacks.onSpeechStart();
+      if (this.audioContext !== context) return;
       if (event === "speech-end" || event === "no-speech") {
         this.stop();
         if (event === "speech-end") callbacks.onSpeechEnd();

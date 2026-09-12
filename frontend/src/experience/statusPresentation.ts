@@ -28,6 +28,7 @@ export function speechStatusLabel(status: Pick<SpeechStatus, "state" | "reason">
   return SPEECH_LABELS[status.state];
 }
 
-export function voiceStatusLabel(status: Pick<VoiceInputStatus, "state">): string {
+export function voiceStatusLabel(status: Pick<VoiceInputStatus, "state" | "code">): string {
+  if (status.code === "transcription_busy") return "前の音声を処理中です。少し待って録り直してください。";
   return VOICE_LABELS[status.state];
 }

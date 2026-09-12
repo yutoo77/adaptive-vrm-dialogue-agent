@@ -69,8 +69,10 @@ export class PushToTalkController {
   private stream: AudioStreamLike | null = null;
   private chunks: Blob[] = [];
   private stopTimer: number | null = null;
-  private discardRecording = false;
+  private deviceRefreshId = 0;
   private disposed = false;
+  private connected = false;
+  private listeningForDevices = false;
   private state: VoiceInputStatus["state"] = "checking";
   private microphones: readonly MicrophoneOption[] = [DEFAULT_MICROPHONE];
   private selectedDeviceId = "";
@@ -87,11 +89,16 @@ export class PushToTalkController {
   ) {}
 
   public async initialize(): Promise<void> {
-    if (!this.mediaDevices?.getUserMedia || typeof globalThis.MediaRecorder === "undefined") {
+    if (this.disposed || this.isBusy() || (this.state === "checking" && this.requestController)) return;
+    this.connected = false;
+    if (!this.supportsRecording()) {
       this.setStatus("unavailable", "このブラウザではマイク録音を利用できません。", "none");
       return;
     }
-    this.mediaDevices.addEventListener?.("devicechange", this.handleDeviceChange);
+    if (!this.listeningForDevices) {
+      this.mediaDevices?.addEventListener?.("devicechange", this.handleDeviceChange);
+      this.listeningForDevices = true;
+    }
     const operationId = ++this.operationId;
     const controller = new AbortController();
     this.requestController = controller;
@@ -101,10 +108,11 @@ export class PushToTalkController {
       if (!this.isCurrent(operationId)) return;
       await this.refreshMicrophones(false);
       if (!this.isCurrent(operationId)) return;
+      this.connected = true;
       this.setStatus("idle", `音声入力できます（${health.model} / 端末内処理）。`, "start");
     } catch (error: unknown) {
       if (!this.isCurrent(operationId)) return;
-      this.setStatus("unavailable", this.publicMessage(error), "none");
+      this.setStatus("unavailable", this.publicMessage(error), "retry");
     } finally {
       if (this.requestController === controller) this.requestController = null;
     }
@@ -112,6 +120,10 @@ export class PushToTalkController {
 
   public toggle(): void {
     if (this.disposed) return;
+    if (this.state === "unavailable" && this.supportsRecording()) {
+      void this.initialize();
+      return;
+    }
     if (this.state === "recording") {
       this.stopRecording();
       return;
@@ -131,12 +143,14 @@ export class PushToTalkController {
     if (!selected) return;
     this.selectedDeviceId = selected.deviceId;
     this.callbacks.onMicrophonesChange(this.microphones, this.selectedDeviceId);
+    if (!this.connected) return;
     this.setStatus("idle", `${selected.label}を次回の録音で使用します。`, "start");
   }
 
   public setAutoStop(enabled: boolean): void {
     if (this.disposed || this.isBusy()) return;
     this.autoStopEnabled = enabled;
+    if (!this.connected) return;
     this.setStatus(
       "idle",
       enabled ? "話し終わりの無音を検出して自動停止します。" : "手動停止で音声を認識します。",
@@ -148,47 +162,48 @@ export class PushToTalkController {
     this.operationId += 1;
     this.requestController?.abort();
     this.requestController = null;
-    this.discardRecording = true;
-    if (this.recorder?.state === "recording") this.recorder.stop();
     this.cleanupRecording();
     if (!this.disposed) {
-      this.setStatus("idle", "音声入力をキャンセルしました。", "start");
+      this.setStatus(
+        this.connected ? "idle" : "unavailable",
+        "音声入力をキャンセルしました。",
+        this.connected ? "start" : this.supportsRecording() ? "retry" : "none",
+      );
       this.callbacks.onCharacterState("idle");
     }
   }
 
   public dispose(): void {
+    if (this.disposed) return;
     this.mediaDevices?.removeEventListener?.("devicechange", this.handleDeviceChange);
     this.disposed = true;
     this.cancel();
   }
 
   private async startRecording(): Promise<void> {
-    if (!this.mediaDevices) return;
+    if (!this.mediaDevices || !this.connected || this.disposed) return;
     const operationId = ++this.operationId;
     this.callbacks.onBeforeRecording();
     this.setStatus("requesting", "マイクの使用許可を待っています。", "cancel");
     try {
-      const stream = await this.acquireStream();
+      const stream = await this.acquireStream(operationId);
       if (!this.isCurrent(operationId)) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
       this.stream = stream;
       await this.refreshMicrophones(false);
-      if (!this.isCurrent(operationId)) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
+      if (!this.isCurrent(operationId)) return;
       this.chunks = [];
-      this.discardRecording = false;
       const recorder = this.createRecorder(stream);
       this.recorder = recorder;
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) this.chunks.push(event.data);
+        if (this.isCurrentRecorder(operationId, recorder) && event.data.size > 0) this.chunks.push(event.data);
       };
-      recorder.onerror = () => this.fail("マイク録音中にエラーが発生しました。");
-      recorder.onstop = () => void this.handleRecordingStopped(operationId);
+      recorder.onerror = () => {
+        if (this.isCurrentRecorder(operationId, recorder)) this.fail("マイク録音中にエラーが発生しました。");
+      };
+      recorder.onstop = () => void this.handleRecordingStopped(operationId, recorder);
       recorder.start(250);
       this.stopTimer = globalThis.setTimeout(() => this.stopRecording(), MAX_RECORDING_MS);
       this.setStatus("recording", "録音中です。もう一度押すと認識します（最大15秒）。", "stop");
@@ -209,12 +224,11 @@ export class PushToTalkController {
     this.recorder.stop();
   }
 
-  private async handleRecordingStopped(operationId: number): Promise<void> {
-    const discarded = this.discardRecording;
+  private async handleRecordingStopped(operationId: number, recorder: RecorderLike): Promise<void> {
+    if (!this.isCurrentRecorder(operationId, recorder)) return;
     const mimeType = this.chunks.find((chunk) => chunk.type)?.type ?? "audio/webm";
     const audio = new Blob(this.chunks, { type: mimeType });
     this.cleanupRecording();
-    if (discarded || !this.isCurrent(operationId)) return;
     if (audio.size === 0) {
       this.fail("音声を録音できませんでした。マイク設定を確認してください。");
       return;
@@ -232,7 +246,7 @@ export class PushToTalkController {
       this.callbacks.onCharacterState("idle");
     } catch (error: unknown) {
       if (!this.isCurrent(operationId) || controller.signal.aborted) return;
-      this.fail(this.publicMessage(error));
+      this.fail(this.publicMessage(error), error instanceof TranscriptionApiError ? error.code : null);
     } finally {
       if (this.requestController === controller) this.requestController = null;
     }
@@ -241,10 +255,19 @@ export class PushToTalkController {
   private cleanupRecording(): void {
     this.clearStopTimer();
     this.stopVoiceActivityMonitoring();
-    this.stream?.getTracks().forEach((track) => track.stop());
+    const stream = this.stream;
+    const recorder = this.recorder;
     this.stream = null;
     this.recorder = null;
     this.chunks = [];
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      try { if (recorder.state !== "inactive") recorder.stop(); }
+      catch { /* Tracks still need releasing when the recorder has already stopped. */ }
+    }
+    stream?.getTracks().forEach((track) => track.stop());
   }
 
   private startVoiceActivityMonitoring(stream: AudioStreamLike, operationId: number): void {
@@ -262,13 +285,11 @@ export class PushToTalkController {
         },
         onNoSpeech: () => {
           if (!this.isCurrent(operationId) || this.state !== "recording") return;
-          this.discardRecording = true;
-          if (this.recorder?.state === "recording") this.recorder.stop();
           this.fail("音声を検出できませんでした。マイクへ近づいて、もう一度話してください。");
         },
       });
     } catch {
-      this.voiceActivityMonitor = null;
+      this.stopVoiceActivityMonitoring();
       this.callbacks.onWarning("話し終わりの自動判定を開始できないため、手動停止を使用します。");
     }
   }
@@ -278,12 +299,13 @@ export class PushToTalkController {
     this.voiceActivityMonitor = null;
   }
 
-  private async acquireStream(): Promise<AudioStreamLike> {
+  private async acquireStream(operationId: number): Promise<AudioStreamLike> {
     if (!this.mediaDevices) throw new Error("Media devices are unavailable.");
     try {
       return await this.mediaDevices.getUserMedia({ audio: this.audioConstraints(), video: false });
     } catch (error: unknown) {
       if (
+        !this.isCurrent(operationId) ||
         !this.selectedDeviceId ||
         (!isNamedError(error, "OverconstrainedError") && !isNamedError(error, "NotFoundError"))
       ) {
@@ -292,6 +314,7 @@ export class PushToTalkController {
       const unavailable = this.microphones.find((option) => option.deviceId === this.selectedDeviceId)?.label;
       this.selectedDeviceId = "";
       await this.refreshMicrophones(false);
+      if (!this.isCurrent(operationId)) throw new DOMException("Recording cancelled", "AbortError");
       this.callbacks.onWarning(`${unavailable ?? "選択したマイク"}を利用できないため、既定のマイクへ戻しました。`);
       return this.mediaDevices.getUserMedia({ audio: this.audioConstraints(), video: false });
     }
@@ -309,12 +332,15 @@ export class PushToTalkController {
   }
 
   private async refreshMicrophones(announceFallback: boolean): Promise<void> {
+    if (this.disposed) return;
+    const refreshId = ++this.deviceRefreshId;
     if (!this.mediaDevices?.enumerateDevices) {
       this.callbacks.onMicrophonesChange(this.microphones, this.selectedDeviceId);
       return;
     }
     try {
       const devices = await this.mediaDevices.enumerateDevices();
+      if (this.disposed || refreshId !== this.deviceRefreshId) return;
       const audioInputs = devices.filter((device) => device.kind === "audioinput");
       const defaultLabel = audioInputs.find((device) => device.deviceId === "default")?.label;
       const options: MicrophoneOption[] = [
@@ -343,7 +369,9 @@ export class PushToTalkController {
       this.microphones = options;
       this.callbacks.onMicrophonesChange(options, this.selectedDeviceId);
     } catch {
-      this.callbacks.onMicrophonesChange(this.microphones, this.selectedDeviceId);
+      if (!this.disposed && refreshId === this.deviceRefreshId) {
+        this.callbacks.onMicrophonesChange(this.microphones, this.selectedDeviceId);
+      }
     }
   }
 
@@ -352,13 +380,13 @@ export class PushToTalkController {
     this.stopTimer = null;
   }
 
-  private fail(message: string): void {
+  private fail(message: string, code: string | null = null): void {
     this.operationId += 1;
     this.requestController?.abort();
     this.requestController = null;
     this.cleanupRecording();
     if (this.disposed) return;
-    this.setStatus("error", message, "start");
+    this.setStatus("error", message, "start", code);
     this.callbacks.onCharacterState("confused");
     this.callbacks.onWarning(message);
   }
@@ -367,13 +395,22 @@ export class PushToTalkController {
     state: VoiceInputStatus["state"],
     message: string,
     action: VoiceInputStatus["action"],
+    code: string | null = null,
   ): void {
     this.state = state;
-    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action });
+    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action, ...(code ? { code } : {}) });
   }
 
   private isCurrent(operationId: number): boolean {
     return !this.disposed && operationId === this.operationId;
+  }
+
+  private isCurrentRecorder(operationId: number, recorder: RecorderLike): boolean {
+    return this.isCurrent(operationId) && this.recorder === recorder;
+  }
+
+  private supportsRecording(): boolean {
+    return !!this.mediaDevices?.getUserMedia && typeof globalThis.MediaRecorder === "function";
   }
 
   private isBusy(): boolean {
