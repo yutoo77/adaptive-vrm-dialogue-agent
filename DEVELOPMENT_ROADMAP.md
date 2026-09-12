@@ -12,6 +12,8 @@
 
 ## 現在のRelease目標
 
+9月13日・音声入力時の下書き保持: 認識結果による丸ごと置換を、現在の下書きへの追記へ変更。体験での待ち時間中の編集、日本語変換、文字数超過、取消/タブ移動を扱う。新しい画面要素、依存、外部APIは追加しない。[検証記録](docs/evaluations/voice-draft-preservation-2026-09-13.md)。次の利用者確認は「書きかけ＋音声追記」の操作感と実マイクの認識待ち。速度・認識精度・自然な会話の評価とは分ける。
+
 9月13日・測定と事前読込: 自作5音声を使い、Model構築約2.3〜2.4秒と、その後の認識を分けて計測した。探索幅1の対比較は短縮中央値187msにとどまり、品質の既定5は維持。`start_demo.ps1 -PrepareVoiceInput`を追加し、取得済みModelの読込だけをデモ前へ移す。新規Download/録音/課金は行わない。[測定](docs/evaluations/transcription-latency-2026-09-13.md) / [事前読込](docs/evaluations/transcription-preparation-2026-09-13.md)。次のGateは、実マイクでの待ち時間・誤認識と利用者による自然さの確認。
 
 9月13日・認識処理の滞留防止: 前の認識が実際に終わるまで次の録音をQueueへためない。両タブに理由を短く出し、Draftを保ったままText/再録音へ戻す。[検証記録](docs/evaluations/transcription-capacity-2026-09-13.md)。接続復帰、録音Lifecycle、認識容量の3 Sliceを順に検証した。次は合成した架空音声で初回準備と通常認識の時間を分けて計測し、実マイク評価と混同しない。
@@ -157,7 +159,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 ## 現在のEvidence（2026-09-13）
 
-- Backend: 193 tests、Ruff、pip check。Frontend: 187 tests、型/lint/build。事前読込追加後のLocal Browser全34件も成功（5.0分、再試行なし）。PR #14のCIは全34件/Secret scan成功、main `6ef2829`へ統合済み。npm/pipの監査で既知脆弱性なし。
+- Backend: 193 tests、Ruff、pip check。Frontend: 199 tests、型/lint/build。下書き保持追加後のLocal Browser全40件も成功（5.7分、再試行なし）。npm/pipの監査で既知脆弱性なし。今回の下書き/IME/文字数超過の範囲と実入力の未評価点は[検証記録](docs/evaluations/voice-draft-preservation-2026-09-13.md)を参照。
 - 録音取消/即時再開の旧Eventを再現・修正。Fake RecorderによるBrowser 20回のモード切替取消でTrackが毎回0へ戻り、Uploadなし、両Draft保持を確認。[記録](docs/evaluations/recording-lifecycle-2026-09-12.md)
 - 盤面照合、未調査時の非開示、誤答後の保持、API障害時の固定応答、答え確認の取消/Keyboard/320pxを確認。Edgeで実VRM表示とローカル音声の再生状態も確認。
 - 音声入力の接続障害を模擬し、自動復帰/手動再接続/320pxの操作/両タブの状態保持/マイク非起動を確認。初回障害そのものの原因特定と、復帰経路の検証は区別する。

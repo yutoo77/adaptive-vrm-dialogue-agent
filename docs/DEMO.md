@@ -42,6 +42,8 @@ If a response remains in `thinking`, the send button changes to `応答を停止
 
 Press the microphone button, say a short phrase, and let silence stop the recording. Show that the recognized text returns to the input box instead of being sent automatically. This gives the user a chance to correct a recognition error.
 
+Optional draft check: type `今日は` before recording. The recognized text should appear on a new line after it, not replace it. In `体験`, edits made while recognition is running are also retained. Text over the input limit remains intact; attempting to send asks for a shorter message. Clear the draft first if the intention is to replace it by recording again. IME-pending results are discarded when leaving a tab. See the [automated draft checks and native IME limitation](evaluations/voice-draft-preservation-2026-09-13.md).
+
 Before a voice demo, optionally run `.\start_demo.ps1 -PrepareVoiceInput` from the repository root. It loads only the cached recognition model into the running Backend, without recording or downloading; failure leaves Text available. This moves model loading earlier, not the remaining CPU inference or silence-detection delay. See the [measured limits](evaluations/transcription-latency-2026-09-13.md).
 
 If microphone permission or transcription fails, show that Text input remains available.
