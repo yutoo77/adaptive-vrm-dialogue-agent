@@ -99,3 +99,40 @@ test("twenty mode-bound recordings release every fake track and preserve both dr
   await expect(page.locator("#dialogue-input")).toHaveValue("対話は残す");
   expect(uploads).toBe(0);
 });
+
+for (const mode of ["dialogue", "experience"] as const) {
+  test(`busy recognizer preserves ${mode} draft and recovers only on explicit re-record`, async ({ page }) => {
+    let uploads = 0;
+    await page.route("**/api/transcription", async route => {
+      uploads++;
+      if (uploads === 1) await route.fulfill({ status: 429, json: { detail: {
+        code: "transcription_busy", message: "前の音声をまだ処理しています。", request_id: "fake-busy",
+      } } });
+      else await route.fulfill({ json: { text: "もう一度話した文", language: "ja", language_probability: 1,
+        audio_duration_seconds: 1, request_id: "fake-retry", latency_ms: 10 } });
+    });
+    if (mode === "experience") {
+      await page.getByRole("tab", { name: "体験", exact: true }).click();
+      await page.locator("#experience-start").click();
+    }
+    const input = page.locator(mode === "dialogue" ? "#dialogue-input" : "#experience-input");
+    const microphone = page.locator(mode === "dialogue" ? "#voice-input-control" : "#experience-microphone");
+    const status = page.locator(mode === "dialogue" ? "#voice-input-status-summary" : "#experience-voice-status");
+    await input.fill("消さない下書き");
+    await microphone.click();
+    await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "1");
+    await microphone.click();
+    await expect(status).toContainText("前の音声を処理中");
+    await expect(input).toHaveValue("消さない下書き");
+    await expect(input).toBeEnabled();
+    await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "0");
+    expect(uploads).toBe(1);
+    await expect(page.locator("html")).toHaveAttribute("data-test-permissions", "1");
+    await microphone.click();
+    await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "1");
+    await microphone.click();
+    await expect(input).toHaveValue("もう一度話した文");
+    expect(uploads).toBe(2);
+    await expect(status).not.toContainText("前の音声を処理中");
+  });
+}

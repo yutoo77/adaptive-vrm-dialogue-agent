@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新日: 2026-09-12
+更新日: 2026-09-13
 
 このRoadmapは機能数ではなく、各Vertical Sliceが「動く・復帰できる・評価できる・説明できる」状態になったかで進行を判断する。
 
@@ -11,6 +11,8 @@
 今後の主要開発は、このVisionを構成する能力を一つずつ完成させる。同時に複数の主要機能を進めず、既定Mock、Text fallback、利用者による保存・外部送信の制御を壊さない。
 
 ## 現在のRelease目標
+
+9月13日・認識処理の滞留防止: 前の認識が実際に終わるまで次の録音をQueueへためない。両タブに理由を短く出し、Draftを保ったままText/再録音へ戻す。[検証記録](docs/evaluations/transcription-capacity-2026-09-13.md)。接続復帰、録音Lifecycle、認識容量の3 Sliceを順に検証した。次は合成した架空音声で初回準備と通常認識の時間を分けて計測し、実マイク評価と混同しない。
 
 9月12日・音声入力復帰: 接続失敗から再読込なしで復帰できるようにした。接続GETの再試行は1回のみ、手動再接続では録音せず、両タブの下書き・進行を保持する。実際の初回障害の原因は未確定だが、本文読取Timeoutを形式不正と取り違える経路は再現・修正した。[検証記録](docs/evaluations/voice-input-recovery-2026-09-12.md)。次は録音取消と即時再開の安全性を確認する。認識速度改善とは別の完了条件として扱う。
 
@@ -84,6 +86,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 最大15秒/4MiB、Cancel、認識TextのDraft確認
 - 接続確認の1回だけの再試行、録音・下書き変更をしない手動再接続
 - 取消/即時再開のRecorder同一性、遅延Permission/Device更新、無音判定の停止と解放
+- 認識Workerは同時1件・待機0件。取消しても実計算終了まで容量を占有し、追加分は明示429
 
 ### Conversation Memory
 
@@ -149,9 +152,9 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 発話後を一律`idle`にせず、非中立時は弱めた表情・視線・呼吸のBaselineへ戻す
 - 実OpenAI固定3 Turnで初回24/26のFailureを検出し、補正後26/26。2 Run累計既知費用$0.00172914
 
-## 現在のEvidence（2026-09-12）
+## 現在のEvidence（2026-09-13）
 
-- Backend: 176 tests、Ruff、pip check。Frontend: 186 tests、型/lint/build。Browser: 32 tests（通常対話を含む）。npm/pipの監査で既知脆弱性なし。
+- Backend: 183 tests、Ruff、pip check。Frontend: 187 tests、型/lint/build。Browser: 前Sliceの全32 testsと、容量制御を含む対象4 tests成功。全体34 testsはRelease時に再実行する。npm/pipの監査で既知脆弱性なし。
 - 録音取消/即時再開の旧Eventを再現・修正。Fake RecorderによるBrowser 20回のモード切替取消でTrackが毎回0へ戻り、Uploadなし、両Draft保持を確認。[記録](docs/evaluations/recording-lifecycle-2026-09-12.md)
 - 盤面照合、未調査時の非開示、誤答後の保持、API障害時の固定応答、答え確認の取消/Keyboard/320pxを確認。Edgeで実VRM表示とローカル音声の再生状態も確認。
 - 音声入力の接続障害を模擬し、自動復帰/手動再接続/320pxの操作/両タブの状態保持/マイク非起動を確認。実API本文生成・実マイク入力・長時間安定性・本人の主観的評価は今回未実施。初回障害そのものの原因特定と、復帰経路の検証は区別する。

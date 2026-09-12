@@ -518,8 +518,10 @@ export class UIController {
       ready: "認識した内容を入力欄で確認してください",
       error: "音声入力に失敗しました。文字で入力できます。",
     };
-    this.required("#voice-input-status-summary").textContent = status.action === "retry" ?
-      "音声入力に接続できません。↻ で再接続できます。" : summaries[status.state];
+    this.required("#voice-input-status-summary").textContent = status.code === "transcription_busy"
+      ? "前の音声を処理中です。少し待って録り直してください。"
+      : status.action === "retry"
+        ? "音声入力に接続できません。↻ で再接続できます。" : summaries[status.state];
 
     const labels = {
       start: "音声で入力",

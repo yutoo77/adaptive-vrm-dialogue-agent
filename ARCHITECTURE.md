@@ -96,6 +96,8 @@ Push-to-Talkは別経路で、利用者のButton操作後だけ`getUserMedia`を
 
 録音Eventは操作番号とRecorderの同一性を確認してからBytesや状態を扱う。取消/失敗時はCallbackを外し、Recorder・Track・無音判定のAudioContextを解放する。古い終了通知は新しい録音の後始末をできない。Permission待ち取消後は遅れて許可されたTrackを停止し、消失Deviceの再試行も行わない。Device一覧も新しい照会結果を優先する。[録音Lifecycle検証](docs/evaluations/recording-lifecycle-2026-09-12.md)
 
+faster-whisperは一つのProviderにつき同時実行1件・待機0件。Model読込から遅延Segment列挙までWorkerが非待機Lockを保持し、追加Requestへ429 `transcription_busy`を返す。HTTP Taskを取り消しても実Worker終了前にLockを解放しない。両タブに待機理由を示し、DraftとText fallbackを残す。これはCPU認識の滞留対策であり、Internet向けRate Limitや推論中断・推論高速化ではない。[検証](docs/evaluations/transcription-capacity-2026-09-13.md)
+
 Frontendの各Controllerは`performance.now()`でBrowser側の利用者体験時間を測り、UIの診断欄へ認識、最初のText、本文完了、音声再生開始を独立して渡す。Backend Logも初文・本文完了・Commit完了を分ける。会話本文や音声を計測用に追加保存せず、最適化対象を判断する一時表示だけを行う。
 
 ## Repository構成

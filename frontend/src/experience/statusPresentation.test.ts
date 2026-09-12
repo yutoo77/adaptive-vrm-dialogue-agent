@@ -41,6 +41,10 @@ describe("speechStatusLabel", () => {
 });
 
 describe("voiceStatusLabel", () => {
+  it("explains recognizer capacity without depending on backend wording", () => {
+    expect(voiceStatusLabel({ state: "error", code: "transcription_busy" })).toBe("前の音声を処理中です。少し待って録り直してください。");
+    expect(voiceStatusLabel({ state: "idle" })).toBe("");
+  });
   it.each(Object.entries(voiceCases))("presents %s as the requested short label", (state, expected) => {
     expect(voiceStatusLabel({ state: state as VoiceInputStatus["state"] })).toBe(expected);
   });

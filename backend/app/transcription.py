@@ -55,9 +55,16 @@ class FasterWhisperTranscriptionProvider:
 
     def transcribe(self, audio: bytes, media_type: str, request_id: str) -> TranscriptionResult:
         del media_type, request_id
-        model = self._get_model()
+        if not self._inference_lock.acquire(blocking=False):
+            raise TranscriptionProviderError(
+                429,
+                "transcription_busy",
+                "前の音声をまだ処理しています。少し待ってから、もう一度録音してください。",
+            )
+        # The worker owns capacity until it actually finishes, even if HTTP is cancelled.
         try:
-            with self._inference_lock:
+            model = self._get_model()
+            try:
                 segments, info = model.transcribe(
                     BytesIO(audio),
                     language="ja",
@@ -67,12 +74,14 @@ class FasterWhisperTranscriptionProvider:
                     condition_on_previous_text=False,
                 )
                 text = "".join(segment.text for segment in segments).strip()
-        except Exception as error:
-            raise TranscriptionProviderError(
-                422,
-                "invalid_audio",
-                "録音データを音声として読み取れませんでした。もう一度録音してください。",
-            ) from error
+            except Exception as error:
+                raise TranscriptionProviderError(
+                    422,
+                    "invalid_audio",
+                    "録音データを音声として読み取れませんでした。もう一度録音してください。",
+                ) from error
+        finally:
+            self._inference_lock.release()
 
         if not text:
             raise TranscriptionProviderError(

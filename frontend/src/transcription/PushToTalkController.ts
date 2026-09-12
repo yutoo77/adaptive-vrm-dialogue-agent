@@ -246,7 +246,7 @@ export class PushToTalkController {
       this.callbacks.onCharacterState("idle");
     } catch (error: unknown) {
       if (!this.isCurrent(operationId) || controller.signal.aborted) return;
-      this.fail(this.publicMessage(error));
+      this.fail(this.publicMessage(error), error instanceof TranscriptionApiError ? error.code : null);
     } finally {
       if (this.requestController === controller) this.requestController = null;
     }
@@ -380,13 +380,13 @@ export class PushToTalkController {
     this.stopTimer = null;
   }
 
-  private fail(message: string): void {
+  private fail(message: string, code: string | null = null): void {
     this.operationId += 1;
     this.requestController?.abort();
     this.requestController = null;
     this.cleanupRecording();
     if (this.disposed) return;
-    this.setStatus("error", message, "start");
+    this.setStatus("error", message, "start", code);
     this.callbacks.onCharacterState("confused");
     this.callbacks.onWarning(message);
   }
@@ -395,9 +395,10 @@ export class PushToTalkController {
     state: VoiceInputStatus["state"],
     message: string,
     action: VoiceInputStatus["action"],
+    code: string | null = null,
   ): void {
     this.state = state;
-    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action });
+    if (!this.disposed) this.callbacks.onStatusChange({ state, message, action, ...(code ? { code } : {}) });
   }
 
   private isCurrent(operationId: number): boolean {
