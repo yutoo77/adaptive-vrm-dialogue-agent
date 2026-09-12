@@ -92,6 +92,8 @@ Profileの口調は短い会話例で示し、毎回の自己紹介・質問・�
 
 Push-to-Talkは別経路で、利用者のButton操作後だけ`getUserMedia`を呼ぶ。録音Blobを`POST /api/transcription`へ送り、認識Textを送信せずDraftへ戻す。利用者が確認・修正した後に通常のText対話経路へ渡す。
 
+接続確認のGETはBrowser/Backend双方で`no-store`とし、通信・形式・5xxの一時障害だけ350ms後に1回再確認する（各回5秒Timeout、4xxは再試行しない）。失敗後は既存マイク操作を「再接続」に切り替える。再接続は録音やDraft変更を伴わず、Health成功前に設定変更で録音可能へ移らない。POST録音は自動再送しない。本文読取中のTimeoutも形式不正とは区別する。[検証](docs/evaluations/voice-input-recovery-2026-09-12.md)
+
 Frontendの各Controllerは`performance.now()`でBrowser側の利用者体験時間を測り、UIの診断欄へ認識、最初のText、本文完了、音声再生開始を独立して渡す。Backend Logも初文・本文完了・Commit完了を分ける。会話本文や音声を計測用に追加保存せず、最適化対象を判断する一時表示だけを行う。
 
 ## Repository構成

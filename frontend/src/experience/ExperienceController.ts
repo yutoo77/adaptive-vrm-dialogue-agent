@@ -28,7 +28,7 @@ export class ExperienceController {
   private disposed = false;
   private provider: "mock" | "openai" | null = null;
   private speech: SpeechStatus = { state: "checking", message: "", action: "none" };
-  private voice: Pick<VoiceInputStatus, "state" | "message"> = { state: "checking", message: "" };
+  private voice: VoiceInputStatus = { state: "checking", message: "", action: "none" };
   private lastBusy = false;
   private answerConfirmation: { sessionId: string; revision: number } | null = null;
 
@@ -84,7 +84,7 @@ export class ExperienceController {
     this.renderControls(this.session.state);
   }
 
-  public setVoiceStatus(status: Pick<VoiceInputStatus, "state" | "message">): void {
+  public setVoiceStatus(status: VoiceInputStatus): void {
     this.voice = status;
     this.renderBoard(this.session.state);
     this.renderControls(this.session.state);
@@ -301,9 +301,9 @@ export class ExperienceController {
     this.required("#experience-stop").hidden = !state.busy;
     this.required<HTMLTextAreaElement>("#experience-input").disabled = false;
     const microphone = this.required<HTMLButtonElement>("#experience-microphone");
-    microphone.disabled = !this.voiceBusy && (state.busy || state.needsRefresh || !state.snapshot || this.voice.state === "checking" || this.voice.state === "unavailable");
-    microphone.textContent = this.voice.state === "recording" ? "録音を終える" : this.voice.state === "processing" || this.voice.state === "requesting" ? "入力を停止" : "マイク";
-    microphone.setAttribute("aria-label", this.voice.state === "recording" ? "録音を終えて文字にする" : "音声入力を切り替える");
+    microphone.disabled = !this.voiceBusy && (state.busy || state.needsRefresh || !state.snapshot || this.voice.action === "none");
+    microphone.textContent = this.voice.action === "retry" ? "再接続" : this.voice.state === "recording" ? "録音を終える" : this.voice.state === "processing" || this.voice.state === "requesting" ? "入力を停止" : "マイク";
+    microphone.setAttribute("aria-label", this.voice.action === "retry" ? "音声入力に再接続" : this.voice.state === "recording" ? "録音を終えて文字にする" : "音声入力を切り替える");
     const speechLabel = speechStatusLabel(this.speech);
     const voiceLabel = voiceStatusLabel(this.voice);
     this.required("#experience-speech-status").textContent = speechLabel;

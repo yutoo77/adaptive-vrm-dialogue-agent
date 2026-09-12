@@ -60,7 +60,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 | --- | --- |
 | Character Identity | `月白 しずく v1.1.0`、口調・価値観・避ける表現・Theme・Voice・演技上限を一つのProfileで管理。短い会話例と返答の意味に応じた演技選択を調整 |
 | 対話 | Text入力、Mock/OpenAI Provider切替、Structured Outputのreply-only Streaming、明示返答スタイル4種、生成中の応答停止、Token使用量、Timeout、Request ID |
-| Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認 |
+| Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認、録音を始めない接続復帰 |
 | Voice output | ローカルVOICEVOX、閉じた文の先行合成、順序付き再生Queue、停止、再再生、Text回答を残すFallback |
 | Lip Sync | VOICEVOX母音Timingを`aa / ih / ou / ee / oh`へ同期し、音量Envelopeで開口量を調整 |
 | Avatar | VRM 1.0中心の読込、表情・姿勢・視線、瞬き・呼吸、モデル差異のFallback、3D Placeholder |
@@ -270,6 +270,8 @@ cd backend
 ```
 
 録音はMicrophone Buttonを押した時だけ始まります。最大15秒、4MiBまでです。認識結果は入力欄へ戻るだけで、自動送信しません。マイク名はPermission取得前に表示されないことがあります。
+
+接続確認の一時的な失敗は1回だけ自動で再確認します。それでも失敗したら、マイクの代わりに出る「再接続」を押してください。会話・下書き・謎解きの進行は残り、再接続だけでは録音しません。録音データの自動再送も行いません。[接続復帰の検証](docs/evaluations/voice-input-recovery-2026-09-12.md)
 
 ### OpenAI Provider
 

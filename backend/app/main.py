@@ -735,7 +735,8 @@ def create_app(
         )
 
     @app.get("/api/transcription/health", response_model=TranscriptionHealthResponse)
-    async def transcription_health() -> TranscriptionHealthResponse:
+    async def transcription_health(response: Response) -> TranscriptionHealthResponse:
+        response.headers["Cache-Control"] = "no-store"
         return TranscriptionHealthResponse(
             status="ready",
             provider="faster-whisper",

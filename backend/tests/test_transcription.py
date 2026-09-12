@@ -43,6 +43,7 @@ def test_transcription_health_reports_local_model_without_loading_audio() -> Non
     response = build_client().get("/api/transcription/health")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     assert response.json() == {
         "status": "ready",
         "provider": "faster-whisper",

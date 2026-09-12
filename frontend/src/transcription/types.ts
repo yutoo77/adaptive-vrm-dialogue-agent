@@ -29,7 +29,7 @@ export type VoiceInputState =
 export interface VoiceInputStatus {
   readonly state: VoiceInputState;
   readonly message: string;
-  readonly action: "none" | "start" | "stop" | "cancel";
+  readonly action: "none" | "start" | "stop" | "cancel" | "retry";
 }
 
 export interface MicrophoneOption {
