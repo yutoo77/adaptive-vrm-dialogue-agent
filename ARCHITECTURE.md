@@ -94,6 +94,8 @@ Push-to-Talkは別経路で、利用者のButton操作後だけ`getUserMedia`を
 
 接続確認のGETはBrowser/Backend双方で`no-store`とし、通信・形式・5xxの一時障害だけ350ms後に1回再確認する（各回5秒Timeout、4xxは再試行しない）。失敗後は既存マイク操作を「再接続」に切り替える。再接続は録音やDraft変更を伴わず、Health成功前に設定変更で録音可能へ移らない。POST録音は自動再送しない。本文読取中のTimeoutも形式不正とは区別する。[検証](docs/evaluations/voice-input-recovery-2026-09-12.md)
 
+録音Eventは操作番号とRecorderの同一性を確認してからBytesや状態を扱う。取消/失敗時はCallbackを外し、Recorder・Track・無音判定のAudioContextを解放する。古い終了通知は新しい録音の後始末をできない。Permission待ち取消後は遅れて許可されたTrackを停止し、消失Deviceの再試行も行わない。Device一覧も新しい照会結果を優先する。[録音Lifecycle検証](docs/evaluations/recording-lifecycle-2026-09-12.md)
+
 Frontendの各Controllerは`performance.now()`でBrowser側の利用者体験時間を測り、UIの診断欄へ認識、最初のText、本文完了、音声再生開始を独立して渡す。Backend Logも初文・本文完了・Commit完了を分ける。会話本文や音声を計測用に追加保存せず、最適化対象を判断する一時表示だけを行う。
 
 ## Repository構成

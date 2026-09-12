@@ -83,6 +83,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 発話後約1秒の無音停止、5秒無発話のUpload回避
 - 最大15秒/4MiB、Cancel、認識TextのDraft確認
 - 接続確認の1回だけの再試行、録音・下書き変更をしない手動再接続
+- 取消/即時再開のRecorder同一性、遅延Permission/Device更新、無音判定の停止と解放
 
 ### Conversation Memory
 
@@ -150,7 +151,8 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 ## 現在のEvidence（2026-09-12）
 
-- Backend: 176 tests、Ruff、pip check。Frontend: 172 tests、型/lint/build。Browser: 30 tests（通常対話を含む）。npm/pipの監査で既知脆弱性なし。
+- Backend: 176 tests、Ruff、pip check。Frontend: 186 tests、型/lint/build。Browser: 32 tests（通常対話を含む）。npm/pipの監査で既知脆弱性なし。
+- 録音取消/即時再開の旧Eventを再現・修正。Fake RecorderによるBrowser 20回のモード切替取消でTrackが毎回0へ戻り、Uploadなし、両Draft保持を確認。[記録](docs/evaluations/recording-lifecycle-2026-09-12.md)
 - 盤面照合、未調査時の非開示、誤答後の保持、API障害時の固定応答、答え確認の取消/Keyboard/320pxを確認。Edgeで実VRM表示とローカル音声の再生状態も確認。
 - 音声入力の接続障害を模擬し、自動復帰/手動再接続/320pxの操作/両タブの状態保持/マイク非起動を確認。実API本文生成・実マイク入力・長時間安定性・本人の主観的評価は今回未実施。初回障害そのものの原因特定と、復帰経路の検証は区別する。
 
