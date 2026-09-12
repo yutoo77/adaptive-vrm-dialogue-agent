@@ -22,6 +22,7 @@ from app.experience import (
     experience_router,
     quiet_performance,
 )
+from app.experience_guidance import board_guidance
 from app.experience_narration import ExperienceNarrationContext
 from app.experience_schemas import ExperienceActionRequest, ExperienceSnapshot
 from app.main import create_app
@@ -106,7 +107,7 @@ def test_normal_mock_start_and_messages_do_not_report_an_attention_notice() -> N
         "/api/experience/action", json=action_payload(2, "message", message="何が読めた？")
     ).json()
     assert state["notice"] is None
-    assert state["reply"] == f"手紙には『{FIRST_CLUE}{SECOND_CLUE}』とあったね。この二つと、今の並びを見比べてみよう。"
+    assert state["reply"] == board_guidance([None, None, None])
     assert state["narration_provider"] == "scripted"
 
 
@@ -160,7 +161,7 @@ def test_scripted_puzzle_is_playable_and_only_submit_can_solve() -> None:
     assert state["attempts"] == 1
     assert state["arrangement"] == ["full", "half", "crescent"]
     act("hint")
-    assert state["hint_level"] == 1 and FOCUS_CLUE in state["reply"]
+    assert state["hint_level"] == 1 and "丸い月は今、左の枠" in state["reply"]
     act("hint")
     assert state["hint_level"] == 2 and FINAL_CLUE not in state["reply"]
     act("hint")
@@ -342,7 +343,7 @@ def test_hint_before_inspecting_letter_does_not_advance_or_reveal_conditions_to_
         assert FINAL_CLUE not in str(asdict(context))
         state = await service.action(request_for(state, "inspect", target="letter"))
         state = await service.action(request_for(state, "hint"))
-        assert state.hint_level == 1 and state.reply == FOCUS_CLUE
+        assert state.hint_level == 1 and state.reply == board_guidance(state.arrangement)
 
     asyncio.run(run())
 

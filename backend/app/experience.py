@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Path, Response
 
+from app.experience_guidance import board_guidance
 from app.experience_narration import ExperienceNarrationContext, ExperienceNarrator
 from app.experience_schemas import (
     ExperienceActionRequest,
@@ -275,11 +276,16 @@ class ExperienceService:
             performance = PerformancePlan(
                 emotion="curious", intensity=0.20, gesture="none", voice_style="warm", cues=[]
             )
-            if "letter" not in state.inspected:
+            if state.phase == "solved":
+                reply = "箱はもう開いているね。この並びを、ここに残しておこう。"
+            elif "letter" not in state.inspected:
                 reply = "まず、手紙の裏を一緒に調べてみよう。並べ方の手掛かりを読んでから、考えてみるね。"
             else:
                 state.hint_level = min(3, state.hint_level + 1)
-                reply = (FOCUS_CLUE, THINKING_CLUE, FINAL_CLUE)[state.hint_level - 1]
+                state.focus_target = "box"
+                reply = FINAL_CLUE if state.hint_level == 3 else board_guidance(
+                    state.arrangement, detailed=state.hint_level == 2
+                )
         elif request.action == "arrange":
             assert request.arrangement is not None
             label = "栞を並べる"
@@ -307,7 +313,7 @@ class ExperienceService:
                         emotion="happy", intensity=0.30, gesture="small_nod", voice_style="warm", cues=[]
                     )
                 else:
-                    reply = "まだ開かないね。並びはこのままにしておくよ。手紙の言葉と、一つずつ見比べてみよう。"
+                    reply = "まだ開かないね。" + board_guidance(state.arrangement)
                     performance = PerformancePlan(
                         emotion="confused", intensity=0.20, gesture="none", voice_style="gentle", cues=[]
                     )
@@ -354,10 +360,8 @@ def _scripted_message(state: ExperienceSnapshot) -> str:
         return "便箋の言葉、静かでいいね。もう少しここを見ていても、対話に戻っても大丈夫だよ。"
     if "letter" not in state.inspected:
         return "わたしは手紙の裏を読めるよ。まず、手紙を一緒に調べてみよう。"
-    if state.hint_level == 0:
-        return f"手紙には『{FIRST_CLUE}{SECOND_CLUE}』とあったね。この二つと、今の並びを見比べてみよう。"
     if state.hint_level < 3:
-        return "見つけた言葉と、今の並びを見比べてみよう。もう少し手助けが欲しければ、次のヒントを読めるよ。"
+        return board_guidance(state.arrangement, detailed=state.hint_level == 2)
     return f"{FINAL_CLUE}決まったら、箱を開けてみよう。"
 
 
