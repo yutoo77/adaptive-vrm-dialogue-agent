@@ -183,6 +183,7 @@ adaptive-vrm-dialogue-agent/
 - OpenAI: 所有者が`DIALOGUE_PROVIDER=openai`とAPIキーを明示した場合だけ、固定Character Profile、今回の入力Text、直近履歴、Session要約、関連長期記憶をOpenAI APIへ送る。現在は`store=False`だが、これはZero Data Retentionを意味せず、標準のAbuse Monitoring保持はOpenAI側のData Controlに従う。
 - VOICEVOX: 音声化するTextをローカルEngineの`/audio_query`と`/synthesis`へ送る。接続先はLoopback HTTPだけを許可する。
 - Push-to-Talk: 録音はBrowserからLoopbackのFastAPIへだけ送る。faster-whisperは端末内で推論し、録音Bytesと認識本文を永続保存・通常Log出力しない。
+- Draft反映: 両画面の`VoiceDraft`は現在の入力の末尾へ認識結果を追加し、Textを置換/切断しない。IME変換中だけRAMに保留し、最終Input Event後に反映する。選択範囲とFocusを維持し、Mode移動/Reset/Disposeで保留を破棄する。HTML文字数制限はProgrammatic代入には十分でないため`setCustomValidity`でも検査する。新規保存/通信はない。[検証](docs/evaluations/voice-draft-preservation-2026-09-13.md)
 - Microphone選択: Permission取得後に`enumerateDevices()`で音声入力だけを列挙し、選択した`deviceId`はMemory内だけで保持する。切断時は既定へFallbackする。
 - Voice activity: `createMediaStreamSource()`と`AnalyserNode`で時間波形のRMSだけをBrowser内計算する。発話後の無音で停止し、無発話はBackendへUploadしない。Noise環境では利用者が自動停止をOFFにできる。
 - Log: 会話本文、Session ID、APIキーは通常Logへ残さない。Request ID、Provider、Model、返答スタイル、記憶往復数、処理時間、成功/失敗Codeだけを記録する。

@@ -1,6 +1,7 @@
 import type { PerformancePlan } from "../types/character";
 import type { SpeechStatus } from "../speech/types";
 import type { VoiceInputStatus } from "../transcription/types";
+import { VoiceDraft } from "../transcription/VoiceDraft";
 import { ExperienceClient, type ExperienceGateway } from "./ExperienceClient";
 import { ExperienceSession, type ExperienceSessionState } from "./ExperienceSession";
 import { createExperienceMarkup, MOON_LABELS, TARGET_LABELS, moonIcon } from "./createExperienceMarkup";
@@ -22,6 +23,7 @@ export class ExperienceController {
   public readonly avatarSlot: HTMLElement;
   private readonly events = new AbortController();
   private readonly session: ExperienceSession;
+  private readonly voiceDraft: VoiceDraft;
   private selected: Moon | null = null;
   private draft = "";
   private active = false;
@@ -48,6 +50,11 @@ export class ExperienceController {
         this.callbacks.onReply(snapshot.reply, snapshot.performance);
       },
     });
+    const input = this.required<HTMLTextAreaElement>("#experience-input");
+    this.voiceDraft = new VoiceDraft(input, () => {
+      this.draft = input.value;
+      this.renderControls(this.session.state);
+    }, this.events.signal);
     this.registerEvents();
     this.render(this.session.state);
   }
@@ -60,6 +67,7 @@ export class ExperienceController {
 
   public leave(): void {
     this.active = false;
+    this.voiceDraft.cancelPending();
     this.session.leave();
     this.callbacks.onStop();
     this.callbacks.onFocus(null);
@@ -81,7 +89,12 @@ export class ExperienceController {
   public setDraft(text: string): void {
     this.draft = text.slice(0, 500);
     this.required<HTMLTextAreaElement>("#experience-input").value = this.draft;
+    this.voiceDraft.cancelPending();
     this.renderControls(this.session.state);
+  }
+
+  public appendVoiceTranscript(text: string): void {
+    if (this.active && !this.disposed) this.voiceDraft.append(text);
   }
 
   public setVoiceStatus(status: VoiceInputStatus): void {
@@ -175,6 +188,7 @@ export class ExperienceController {
   }
 
   private async sendMessage(): Promise<void> {
+    if (!this.required<HTMLTextAreaElement>("#experience-input").checkValidity()) return;
     const sentDraft = this.draft;
     if (!sentDraft.trim()) return;
     if (await this.perform({ action: "message", message: sentDraft.trim() })) {

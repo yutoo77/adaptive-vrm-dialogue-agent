@@ -21,6 +21,7 @@ import type {
 } from "../dialogue/types";
 import type { SpeechStatus } from "../speech/types";
 import type { MicrophoneOption, VoiceInputStatus } from "../transcription/types";
+import { VoiceDraft } from "../transcription/VoiceDraft";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
 import { createAppMarkup, createEmptyDialogue, performanceEmotionLabel } from "./createAppMarkup";
 import { icon } from "./icons";
@@ -58,6 +59,7 @@ export class UIController {
   public readonly viewport: HTMLElement;
 
   private readonly abortController = new AbortController();
+  private readonly voiceDraft: VoiceDraft;
   private actions: UIActions | null = null;
   private warnings: string[] = [];
   private currentState: CharacterState = "idle";
@@ -95,6 +97,7 @@ export class UIController {
   public constructor(private readonly root: HTMLElement) {
     this.root.innerHTML = createAppMarkup();
     this.viewport = this.required("#character-viewport");
+    this.voiceDraft = new VoiceDraft(this.required("#dialogue-input"), () => this.resizeComposer(), this.abortController.signal);
     this.registerEvents();
     this.updateState("idle");
     this.updateDeveloperPanel();
@@ -429,6 +432,7 @@ export class UIController {
     const log = this.required("#dialogue-log");
     log.innerHTML = createEmptyDialogue();
     this.required<HTMLTextAreaElement>("#dialogue-input").value = "";
+    this.voiceDraft.cancelPending();
     this.resizeComposer();
     this.clearDialogueError();
     this.latencyMeasurements.transcription = null;
@@ -552,11 +556,12 @@ export class UIController {
     this.updateDeveloperPanel();
   }
 
-  public setDialogueDraft(text: string): void {
-    const input = this.required<HTMLTextAreaElement>("#dialogue-input");
-    input.value = text;
-    this.resizeComposer();
-    input.focus();
+  public appendVoiceTranscript(text: string): void {
+    this.voiceDraft.append(text);
+  }
+
+  public cancelPendingTranscript(): void {
+    this.voiceDraft.cancelPending();
   }
 
   public updateMicrophoneOptions(options: readonly MicrophoneOption[], selectedDeviceId: string): void {
@@ -806,9 +811,11 @@ export class UIController {
           this.actions?.cancelResponse();
           return;
         }
+        if (this.isVoiceInputBusy() || !input.checkValidity()) return;
         const message = input.value;
         if (this.actions?.sendMessage(message)) {
           input.value = "";
+          this.voiceDraft.validate();
           this.resizeComposer();
         }
       },

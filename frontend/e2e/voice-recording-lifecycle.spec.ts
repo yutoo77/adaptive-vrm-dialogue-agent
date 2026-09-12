@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/models/private/character.vrm", route => route.fulfill({ status: 404 }));
@@ -43,6 +43,116 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "設定を閉じる", exact: true }).click();
 });
 
+async function holdTranscript(page: Page) {
+  let held: Route | undefined;
+  await page.route("**/api/transcription", route => { held = route; });
+  return async (text: string) => {
+    await expect.poll(() => !!held).toBe(true);
+    await held!.fulfill({ json: { text, language: "ja", language_probability: 1,
+      audio_duration_seconds: 1, request_id: "fake-delayed", latency_ms: 10 } });
+  };
+}
+
+async function enterExperience(page: Page) {
+  await page.getByRole("tab", { name: "体験", exact: true }).click();
+  await page.locator("#experience-start").click();
+  await expect(page.locator("#experience-workspace")).toHaveAttribute("aria-busy", "false");
+}
+
+async function record(page: Page, mode: "dialogue" | "experience") {
+  const microphone = page.locator(mode === "dialogue" ? "#voice-input-control" : "#experience-microphone");
+  await microphone.click();
+  await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "1");
+  await microphone.click();
+  await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "0");
+}
+
+for (const mode of ["dialogue", "experience"] as const) {
+  test(`over-limit ${mode} dictation is retained in full, blocks sending, and can be edited`, async ({ page }) => {
+    const complete = await holdTranscript(page);
+    if (mode === "experience") await enterExperience(page);
+    const input = page.locator(mode === "dialogue" ? "#dialogue-input" : "#experience-input");
+    const send = page.locator(mode === "dialogue" ? "#dialogue-submit" : "#experience-send");
+    const max = mode === "dialogue" ? 1000 : 500;
+    let sends = 0;
+    page.on("request", request => {
+      if (request.url().endsWith(mode === "dialogue" ? "/api/dialogue/stream" : "/api/experience/action")) sends++;
+    });
+    await input.fill("文".repeat(max));
+    await record(page, mode); await complete("追記🌙");
+    await expect(input).toHaveValue("文".repeat(max) + "\n追記🌙");
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveJSProperty("validationMessage", `${max}文字以内に短くしてから送信してください。`);
+    await send.click();
+    expect(sends).toBe(0);
+    await expect(input).toHaveValue("文".repeat(max) + "\n追記🌙");
+    await input.fill("短く直した文");
+    await expect(input).toHaveJSProperty("validationMessage", "");
+    await send.click();
+    await expect.poll(() => sends).toBe(1);
+    await expect(input).toHaveValue("");
+  });
+}
+
+test("experience dictation preserves processing-time edits, focus and selection without auto-send", async ({ page }) => {
+  const complete = await holdTranscript(page);
+  await enterExperience(page);
+  const input = page.locator("#experience-input");
+  let sends = 0;
+  page.on("request", request => { if (request.url().endsWith("/api/experience/action")) sends++; });
+  await input.fill("録音前");
+  await record(page, "experience");
+  await input.fill("待っている間に修正");
+  await input.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(2, 4, "backward"));
+  await complete("声の追記");
+  await expect(input).toHaveValue("待っている間に修正\n声の追記");
+  await expect(input).toBeFocused();
+  await expect(input).toHaveJSProperty("selectionStart", 2);
+  await expect(input).toHaveJSProperty("selectionEnd", 4);
+  await expect(input).toHaveJSProperty("selectionDirection", "backward");
+  expect(sends).toBe(0);
+});
+
+for (const switchMode of [false, true]) {
+  test(`IME-pending dictation ${switchMode ? "is discarded on mode switch" : "waits for composition and final input"}`, async ({ page }) => {
+    const complete = await holdTranscript(page);
+    await enterExperience(page);
+    const input = page.locator("#experience-input");
+    await record(page, "experience");
+    await input.fill("みかくてい");
+    await input.dispatchEvent("compositionstart", { data: "みかくてい" });
+    await complete("声の追記");
+    await expect(page.locator("#experience-microphone")).toHaveText("マイク");
+    await expect(input).toHaveValue("みかくてい");
+    await expect(input).toHaveJSProperty("validationMessage", "文字入力を確定してから送信してください。");
+    if (switchMode) await page.getByRole("tab", { name: "対話", exact: true }).click();
+    await input.evaluate((element: HTMLTextAreaElement) => {
+      element.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "未確定" }));
+      element.value = "未確定";
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText" }));
+    });
+    if (switchMode) {
+      await expect(page.locator("#dialogue-input")).toHaveValue("");
+      await page.getByRole("tab", { name: "体験", exact: true }).click();
+    }
+    await expect(input).toHaveValue(switchMode ? "未確定" : "未確定\n声の追記");
+    await expect(input).toHaveJSProperty("validationMessage", "");
+  });
+}
+
+test("a processing result cancelled by a mode change cannot reach either draft", async ({ page }) => {
+  const complete = await holdTranscript(page);
+  await page.locator("#dialogue-input").fill("対話を残す");
+  await record(page, "dialogue");
+  await enterExperience(page);
+  await page.locator("#experience-input").fill("体験も残す");
+  await complete("取消済みの声");
+  await page.getByRole("tab", { name: "対話", exact: true }).click();
+  await expect(page.locator("#dialogue-input")).toHaveValue("対話を残す");
+  await page.getByRole("tab", { name: "体験", exact: true }).click();
+  await expect(page.locator("#experience-input")).toHaveValue("体験も残す");
+});
+
 test("mode cancellation and immediate re-record ignore obsolete media events and never auto-send", async ({ page }) => {
   const uploads: string[] = [];
   let dialogueRequests = 0;
@@ -67,7 +177,7 @@ test("mode cancellation and immediate re-record ignore obsolete media events and
   await expect(page.getByRole("button", { name: "録音を停止して認識", exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "1");
   await page.getByRole("button", { name: "録音を停止して認識", exact: true }).click();
-  await expect(page.locator("#dialogue-input")).toHaveValue("新しい録音だけ");
+  await expect(page.locator("#dialogue-input")).toHaveValue("対話の下書き\n新しい録音だけ");
   await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "0");
   expect(uploads).toHaveLength(1);
   expect(uploads[0]).toContain("CURRENT"); expect(uploads[0]).not.toContain("OBSOLETE");
@@ -131,7 +241,7 @@ for (const mode of ["dialogue", "experience"] as const) {
     await microphone.click();
     await expect(page.locator("html")).toHaveAttribute("data-test-active-tracks", "1");
     await microphone.click();
-    await expect(input).toHaveValue("もう一度話した文");
+    await expect(input).toHaveValue("消さない下書き\nもう一度話した文");
     expect(uploads).toBe(2);
     await expect(status).not.toContainText("前の音声を処理中");
   });

@@ -271,6 +271,8 @@ cd backend
 
 録音はMicrophone Buttonを押した時だけ始まります。最大15秒、4MiBまでです。認識結果は入力欄へ戻るだけで、自動送信しません。マイク名はPermission取得前に表示されないことがあります。
 
+書きかけがある場合、認識結果は改行して末尾に追加します。「体験」で認識待ちの間に編集した文も残ります。日本語変換中は確定を待ち、タブを離れた場合は未反映の結果を破棄します。対話1,000文字/体験500文字を超えても切り捨てず、送信時に短く直すよう案内します。録り直して置き換えたい時は、入力欄を消してから録音してください。[下書き保持の検証](docs/evaluations/voice-draft-preservation-2026-09-13.md)
+
 接続確認の一時的な失敗は1回だけ自動で再確認します。それでも失敗したら、マイクの代わりに出る「再接続」を押してください。会話・下書き・謎解きの進行は残り、再接続だけでは録音しません。録音データの自動再送も行いません。[接続復帰の検証](docs/evaluations/voice-input-recovery-2026-09-12.md)
 
 認識中の取消は、画面への結果反映を止めます。端末内の計算まで即座に止まる保証はありません。前の認識が残っている場合、次の録音は順番待ちにせず「前の音声を処理中」と返します。少し待って録り直すか、文字入力で続けられます。[処理待ちをためない設計](docs/evaluations/transcription-capacity-2026-09-13.md)
@@ -422,7 +424,7 @@ adaptive-vrm-dialogue-agent/
 - Character Profileは現在`月白 しずく v1.1.0`のCode定義1種類です。複数Profile切替、UI編集、独自VRMとの統合、聴取評価は未完了です。
 - 短期感情はRAM内で最大2 Turnだけ継続します。Mock分類と明示変化の補正は日本語Keyword Ruleなので、皮肉、複合感情、未知の言い換えを正しく理解するとは限りません。最適な減衰時間も利用者評価前の初期値です。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
-- production JavaScriptは約870kBで、Viteの500kB警告が出ます。
+- production JavaScriptは約934kBで、Viteの500kB警告が出ます。
 - UIの静的MarkupとDeveloper Panel描画は分離済みですが、`UIController`には対話・Memory・Model操作のEvent制御が残り、主要画面を増やす場合は領域別Controller化が必要です。
 - 公式Sample Avatarは動作確認に適しますが、作品の独自性は自作Avatarより弱くなります。
 - VRMA、Motion Capture、複数Avatar、Mobile性能保証は対象外です。

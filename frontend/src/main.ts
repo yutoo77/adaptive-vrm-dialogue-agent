@@ -91,11 +91,8 @@ const voiceInput = new PushToTalkController(new TranscriptionClient(), {
   },
   onMicrophonesChange: (options, selectedDeviceId) => ui.updateMicrophoneOptions(options, selectedDeviceId),
   onTranscript: (text) => {
-    if (currentMode === "experience") experience?.setDraft(text);
-    else {
-      ui.setDialogueDraft(text);
-      ui.showNotice("文字起こしを入力欄へ反映しました。内容を確認して送信してください。");
-    }
+    if (currentMode === "experience") experience?.appendVoiceTranscript(text);
+    else ui.appendVoiceTranscript(text);
   },
   onCharacterState: (state) => viewer?.setState(state),
   onBeforeRecording: () => activeSpeech().stop(),
@@ -195,6 +192,7 @@ experience.setVoiceStatus(voiceInputStatus);
 experience.setSpeechStatus(experienceSpeechStatus);
 workspaceModes = new WorkspaceModes(root, experience.avatarSlot, (mode) => {
   if (["requesting", "recording", "processing"].includes(voiceInputStatus.state)) voiceInput.cancel();
+  ui.cancelPendingTranscript();
   if (currentMode === "dialogue") {
     dialoguePresentationAllowed = false;
     dialogueSpeech.suspend();
