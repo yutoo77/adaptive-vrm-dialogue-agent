@@ -86,6 +86,7 @@ export function createExperienceMarkup(): string {
       </section>
       </aside>
     </div>
+    <dialog id="experience-answer-dialog" class="exp-restart-dialog" aria-labelledby="experience-answer-title" aria-describedby="experience-answer-description"><form method="dialog"><h2 id="experience-answer-title">答えを見ますか？</h2><p id="experience-answer-description">三枚の栞の並びが分かります。</p><div><button class="exp-secondary" value="cancel" autofocus>まだ考える</button><button class="exp-primary" value="reveal">答えを見る</button></div></form></dialog>
     <dialog id="experience-restart-dialog" class="exp-restart-dialog" aria-labelledby="experience-restart-title"><form method="dialog"><h2 id="experience-restart-title">最初から始めますか？</h2><p>この体験の進行・やりとり・下書きを新しくします。通常の対話には影響しません。</p><div><button class="exp-secondary" value="cancel" autofocus>続ける</button><button class="exp-primary" value="restart">最初から始める</button></div></form></dialog>
   `;
 }

@@ -207,6 +207,7 @@ adaptive-vrm-dialogue-agent/
 
 - 体験は独立ControllerとRAMストア: 通常の対話画面・履歴・下書きは維持し、モード切替で既存Avatar DOMだけを移動する。音声再生とLip Syncは別のインスタンスで、通常会話の再生データを守る。
 - パズルの成功は固定ルールで判定: `ExperienceService`だけが盤面と成功を更新し、AIは文章・許可された弱い演技のみ担当する。独立したProvider adapterへ体験資料だけを渡し、通常記憶へアクセスさせない。詳細は[体験設計](docs/EXPERIENCE_DESIGN.md)。
+- 盤面ヒントは純粋関数: `experience_guidance`は手紙の開示後だけ呼び、現在の配置と2条件を照合する。ヒント・誤答・Mock/API障害時に再利用し、配置や成功は変更しない。答え開示の確認dialogはUIの誤操作防止であり、サーバー権限の代わりにはしない。
 - vanilla TypeScriptを継続: 単一画面ではReact追加の効果より依存と抽象化の増加が大きい。
 - FastAPIを採用: APIキーをBrowserへ渡さず、入力検証とProvider差異を集約する。
 - Mockを既定: 初回起動、Test、Demo練習で料金とNetwork依存をなくす。

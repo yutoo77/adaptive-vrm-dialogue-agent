@@ -61,7 +61,7 @@ For the separate cooperative experience, use the route below; do not replace or 
 1. Leave an unsent draft in `対話`, then choose `体験 → 書斎に入る`.
 2. Inspect the window, letter and box. Shizuku reads both necessary conditions from the letter; hints are optional help, not required information.
 3. Select each moon bookmark and a slot, then press `この並びで開ける`. Try a wrong arrangement to show that the board stays intact and no penalty is applied.
-4. If needed, ask for a hint or enter a short consultation. Mock is scripted; OpenAI consultation uses the configured paid API. Only experience-local context is sent.
+4. With full in the middle and the other two reversed, ask for a hint: Shizuku acknowledges the middle and points to the ordering clue. `もう少しヒント` gives a more concrete observation. `答えを見る` opens a confirmation; Escape or `まだ考える` preserves the board, history and hint level. The confirmed third hint reveals the sequence without unlocking anything. These operations make no LLM calls. Free consultation is scripted in Mock (also board-aware after reading the letter); OpenAI uses the configured paid API and only experience-local context.
 5. Solve and read the quiet ending. Switch back to `対話` and confirm the draft and history remain. Returning to `体験` retains progress without automatically replaying old speech.
 
 The solution is left-to-right **half / full / crescent** after inspecting the letter. This is an introductory ordering puzzle, not a claim of a difficult escape game or autonomous Tool-calling Agent. Do not reveal the solution before the user tries it.

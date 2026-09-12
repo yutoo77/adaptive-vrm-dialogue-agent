@@ -207,3 +207,105 @@ function silentWav(): Buffer {
   wav.write("data", 36); wav.writeUInt32LE(samples * 2, 40);
   return wav;
 }
+
+test("Shizuku notices the current board in hints and Mock consultation without opening it", async ({ page }) => {
+  await page.goto("/");
+  await enter(page);
+  await page.locator('[data-inspect="letter"]').click();
+  await place(page, ["crescent", "full", "half"]);
+  await page.locator("#experience-hint").click();
+  await expect(page.locator("#experience-reply")).toContainText("丸い月の場所は合っている");
+  await expect(page.locator("#experience-hint")).toHaveText("もう少しヒント");
+  await page.locator("#experience-hint").click();
+  await expect(page.locator("#experience-reply")).toContainText("より前にある");
+  await place(page, ["half", "full", "crescent"]);
+  await page.locator("#experience-input").fill("この並びでどうかな");
+  await page.locator("#experience-send").click();
+  await expect(page.locator("#experience-reply")).toContainText("開けて確かめて");
+  await expect(page.locator("#experience-ending")).toBeHidden();
+  await expect(page.locator("#experience-hint")).toHaveText("答えを見る");
+  await page.locator("#experience-submit").click();
+  await expect(page.locator("#experience-ending")).toBeVisible();
+});
+
+test("confirmed dialogs do not carry their previous result into a new play", async ({ page }) => {
+  await page.goto("/");
+  await enter(page);
+  const answerDialog = page.getByRole("dialog", { name: "答えを見ますか？" });
+  const restartDialog = page.getByRole("dialog", { name: "最初から始めますか？" });
+  async function reachAnswer(): Promise<void> {
+    await page.locator('[data-inspect="letter"]').click();
+    await page.locator("#experience-hint").click();
+    await expect(page.locator("#experience-hint")).toHaveText("もう少しヒント");
+    await page.locator("#experience-hint").click();
+    await expect(page.locator("#experience-hint")).toHaveText("答えを見る");
+    await page.locator("#experience-hint").click();
+    await expect(answerDialog).toBeVisible();
+  }
+  await reachAnswer();
+  await answerDialog.getByRole("button", { name: "答えを見る", exact: true }).click();
+  await expect(page.locator("#experience-hint")).toHaveText("答えをもう一度");
+  await page.locator("#experience-restart").click();
+  await restartDialog.getByRole("button", { name: "最初から始める", exact: true }).click();
+  await expect(page.locator("#experience-reply")).toContainText("小さな箱");
+  await reachAnswer();
+  await page.keyboard.press("Escape");
+  await expect(answerDialog).toBeHidden();
+  // Reopening must still ask, not replay the answer accepted in the previous play.
+  await page.locator("#experience-hint").click();
+  await expect(answerDialog).toBeVisible();
+  await answerDialog.getByRole("button", { name: "まだ考える" }).click();
+  await expect(page.locator("#experience-hint")).toHaveText("答えを見る");
+  await page.locator("#experience-restart").click();
+  await page.keyboard.press("Escape");
+  await expect(restartDialog).toBeHidden();
+  await page.locator("#experience-hint").click();
+  await expect(answerDialog).toBeVisible();
+  await expect(page.locator('[data-inspect="letter"]')).toHaveAttribute("data-inspected", "true");
+});
+
+for (const width of [1280, 320]) {
+  test(`answer disclosure needs confirmation and Escape is safe at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 });
+    let hintRequests = 0;
+    page.on("request", request => {
+      if (request.url().endsWith("/api/experience/action") && request.postDataJSON()?.action === "hint") hintRequests++;
+    });
+    await page.goto("/");
+    await enter(page);
+    await page.locator('[data-inspect="letter"]').click();
+    await page.locator("#experience-hint").click();
+    await expect(page.locator("#experience-hint")).toHaveText("もう少しヒント");
+    await page.locator("#experience-hint").click();
+    await expect(page.locator("#experience-hint")).toHaveText("答えを見る");
+    const reply = await page.locator("#experience-reply").textContent();
+    const count = await page.locator("#experience-history-count").textContent();
+    await page.locator("#experience-hint").click();
+    const dialog = page.getByRole("dialog", { name: "答えを見ますか？" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "まだ考える" })).toBeFocused();
+    expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`answer-confirmation-${width}.png`), fullPage: true });
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(page.locator("#experience-hint")).toBeFocused();
+    await expect(page.locator("#experience-reply")).toHaveText(reply ?? "");
+    await expect(page.locator("#experience-history-count")).toHaveText(count ?? "");
+    expect(hintRequests).toBe(2);
+    await page.locator("#experience-hint").click();
+    await dialog.getByRole("button", { name: "まだ考える" }).click();
+    await expect(dialog).toBeHidden();
+    expect(hintRequests).toBe(2);
+    await page.locator("#experience-hint").click();
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "答えを見る", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(page.locator("#experience-reply")).toContainText("左から、半分の月、丸い月、細い月");
+    await expect(page.locator("#experience-hint")).toHaveText("答えをもう一度");
+    await expect(page.locator("#experience-ending")).toBeHidden();
+    expect(hintRequests).toBe(3);
+    await page.getByRole("tab", { name: "対話", exact: true }).click();
+    await expect(page.locator("#dialogue-input")).toBeVisible();
+  });
+}

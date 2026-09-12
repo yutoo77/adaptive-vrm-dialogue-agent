@@ -30,6 +30,7 @@ export class ExperienceController {
   private speech: SpeechStatus = { state: "checking", message: "", action: "none" };
   private voice: Pick<VoiceInputStatus, "state" | "message"> = { state: "checking", message: "" };
   private lastBusy = false;
+  private answerConfirmation: { sessionId: string; revision: number } | null = null;
 
   public constructor(
     private readonly root: HTMLElement,
@@ -64,6 +65,9 @@ export class ExperienceController {
     this.callbacks.onFocus(null);
     const dialog = this.required<HTMLDialogElement>("#experience-restart-dialog");
     if (dialog.open) dialog.close("cancel");
+    this.answerConfirmation = null;
+    const answerDialog = this.required<HTMLDialogElement>("#experience-answer-dialog");
+    if (answerDialog.open) answerDialog.close("cancel");
   }
 
   public dispose(): void {
@@ -113,14 +117,14 @@ export class ExperienceController {
       } else if (slot !== undefined) this.place(Number(slot));
       else if (button.id === "experience-start") void this.session.start();
       else if (button.id === "experience-submit") void this.perform({ action: "submit" });
-      else if (button.id === "experience-hint") void this.perform({ action: "hint" });
+      else if (button.id === "experience-hint") this.requestHint();
       else if (button.id === "experience-refresh") void this.session.refresh();
       else if (button.id === "experience-stop") {
         this.session.stop();
         this.callbacks.onStop();
       } else if (button.id === "experience-speech") this.callbacks.onToggleSpeech();
       else if (button.id === "experience-microphone") this.callbacks.onMicrophoneToggle();
-      else if (button.id === "experience-restart") this.required<HTMLDialogElement>("#experience-restart-dialog").showModal();
+      else if (button.id === "experience-restart") this.openConfirmation("#experience-restart-dialog");
     }, { signal });
     this.required<HTMLTextAreaElement>("#experience-input").addEventListener("input", (event) => {
       this.draft = (event.target as HTMLTextAreaElement).value;
@@ -137,6 +141,31 @@ export class ExperienceController {
       this.setDraft("");
       void this.session.start(true);
     }, { signal });
+    this.required<HTMLDialogElement>("#experience-answer-dialog").addEventListener("close", (event) => {
+      const confirmation = this.answerConfirmation;
+      this.answerConfirmation = null;
+      const snapshot = this.session.state.snapshot;
+      if ((event.target as HTMLDialogElement).returnValue !== "reveal" || !confirmation || !snapshot) return;
+      if (snapshot.session_id !== confirmation.sessionId || snapshot.revision !== confirmation.revision) return;
+      void this.perform({ action: "hint" });
+    }, { signal });
+  }
+
+  private requestHint(): void {
+    const snapshot = this.session.state.snapshot;
+    if (!snapshot || snapshot.phase === "solved") return;
+    if (snapshot.hint_level !== 2) {
+      void this.perform({ action: "hint" });
+      return;
+    }
+    this.answerConfirmation = { sessionId: snapshot.session_id, revision: snapshot.revision };
+    this.openConfirmation("#experience-answer-dialog");
+  }
+
+  private openConfirmation(selector: string): void {
+    const dialog = this.required<HTMLDialogElement>(selector);
+    dialog.returnValue = "cancel";
+    dialog.showModal();
   }
 
   private async perform(action: Parameters<ExperienceSession["action"]>[0]): Promise<boolean> {
@@ -265,6 +294,8 @@ export class ExperienceController {
     this.required<HTMLButtonElement>("#experience-submit").hidden = solved;
     this.required<HTMLButtonElement>("#experience-hint").disabled = unavailable || solved;
     this.required<HTMLButtonElement>("#experience-hint").hidden = solved;
+    this.required<HTMLButtonElement>("#experience-hint").textContent =
+      ["ヒントを聞く", "もう少しヒント", "答えを見る", "答えをもう一度"][state.snapshot?.hint_level ?? 0] ?? "ヒントを聞く";
     this.required<HTMLButtonElement>("#experience-send").disabled = unavailable || !this.draft.trim();
     this.required("#experience-send").hidden = state.busy;
     this.required("#experience-stop").hidden = !state.busy;
