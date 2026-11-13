@@ -1,6 +1,6 @@
 # Architecture
 
-更新日: 2026-08-25 / 対象Version: v0.6 Embodied Continuity
+更新日: 2026-11-13 / 対象: v0.6と対話画面の刷新
 
 ## 現在の構成
 
@@ -137,6 +137,7 @@ adaptive-vrm-dialogue-agent/
 | --- | --- | --- |
 | createAppMarkup | 静的DOM、初期Label、入力Controlの構造 | Event、通信、状態変更 |
 | UIController | Event調整、状態、返答スタイル選択、送信/停止Button、短いエラー、Accessibility | Provider固有処理、APIキー、静的Markup生成 |
+| DialoguePresentation | Reactで現在のセリフ、直近3件、全文履歴を描画。暫定応答と確定済みの表示を保持 | 送信・キャンセルの判定、Backendの記憶、VRMのライフサイクル |
 | CharacterProfile | Version付き名前、口調、価値観、避ける表現、Theme、VOICEVOX prosody、演技上限 | 会話履歴、利用者の長期記憶、任意Animation命令、VRM本体 |
 | renderDeveloperPanel | 診断用ViewModelのDOM描画 | Viewer/Providerの状態所有 |
 | Latency表示 | 各Controllerが測った直近のBrowser往復時間を整形 | 永続保存、同一Turnの合計とみなすこと |
@@ -166,15 +167,14 @@ adaptive-vrm-dialogue-agent/
 
 ## UIの情報設計
 
-- 主画面はAvatar、会話履歴、入力を常時表示する。
+- 対話画面の一枚の背景にAvatar、現在のセリフ、入力を配置する。広い画面の右端に履歴を最大3件表示し、全件は履歴dialogから開く。長文の「全文を読む」は対象の返答の先頭を表示する。
 - 返答スタイルは会話へ直接影響するため入力欄の近くにSelectを置き、既定値を「自然に」にする。送信中は変更を無効化し、どのStyleで送ったかをTurn途中で変えない。
 - 生成中は同じ送信Buttonを`応答を停止`へ切り替え、別の停止Controlを増やさない。停止成功時はAssistant本文を追加せず、履歴と長期記憶へ保存していないことを短いNoticeで示す。
 - 正常な待機状態は重複表示せず、処理中、失敗、利用者の判断が必要な状態だけを会話の近くへ表示する。
 - 音声設定、長期記憶、演技調整、診断情報はNative `dialog`内にまとめる。3つのTabと内部の`details`で段階的に開示し、Escape、Tab循環、開いたボタンへのFocus復帰を保つ。会話ログと入力は別領域なので、設定操作で位置や下書きをリセットしない。
 - Providerの送信範囲など、普段の操作を妨げる長文は短いLabelのTooltipと`aria-describedby`、READMEへ分ける。
 - 390px/319px幅でも会話入力を初期Viewport内へ残し、横Overflowを発生させないことをPlaywrightで確認する。
-- StageはCSSによる静かな月の円窓を残し、格子、水紋、浮遊片は外した。外部画像Assetは読み込まない。
-- `UIController.updateState()`が設定する`#app[data-state]`を環境色の唯一の入力とし、Avatarの状態所有を重複させない。
+- 対話Stageはローカルの部屋画像と透明なVRM Canvasを重ねる。体験モードには同じViewerのDOMを移動し、固有のフレーミングとライティングに切り替える。
 - UIのAnimationやTransitionも`prefers-reduced-motion`で抑制し、意味のある状態Textを装飾だけで置き換えない。
 
 ## Dataと外部通信
@@ -217,7 +217,7 @@ adaptive-vrm-dialogue-agent/
 - 体験は独立ControllerとRAMストア: 通常の対話画面・履歴・下書きは維持し、モード切替で既存Avatar DOMだけを移動する。音声再生とLip Syncは別のインスタンスで、通常会話の再生データを守る。
 - パズルの成功は固定ルールで判定: `ExperienceService`だけが盤面と成功を更新し、AIは文章・許可された弱い演技のみ担当する。独立したProvider adapterへ体験資料だけを渡し、通常記憶へアクセスさせない。詳細は[体験設計](docs/EXPERIENCE_DESIGN.md)。
 - 盤面ヒントは純粋関数: `experience_guidance`は手紙の開示後だけ呼び、現在の配置と2条件を照合する。ヒント・誤答・Mock/API障害時に再利用し、配置や成功は変更しない。答え開示の確認dialogはUIの誤操作防止であり、サーバー権限の代わりにはしない。
-- vanilla TypeScriptを継続: 単一画面ではReact追加の効果より依存と抽象化の増加が大きい。
+- Reactへの段階移行。`#dialogue-presentation`の中はReactだけが描画し、既存の`UIController`はコールバックで表示を更新する。フォーム・設定・体験と3D Viewerは既存のDOM境界に置く。初回の暫定表示を文単位の音声処理より先に反映する。根を破棄するときは`unmount()`で表示と監視を解放する。
 - FastAPIを採用: APIキーをBrowserへ渡さず、入力検証とProvider差異を集約する。
 - Mockを既定: 初回起動、Test、Demo練習で料金とNetwork依存をなくす。
 - 返答スタイルは明示選択: 利用者の能力や感情を推定せず、4種類のEnumをFrontendからProviderまで通す。
@@ -232,7 +232,7 @@ adaptive-vrm-dialogue-agent/
 
 Local speechのHTTP clientは`VoicevoxSpeechProvider`内で遅延生成して共有し、FastAPIの終了処理で閉じる。文ごとに接続準備を繰り返さず、端末内の音声を環境Proxyへ流さない。評価用CLIなどでProviderを直接所有する場合も`finally`で`aclose()`する。少数の同一WAV比較では中央値594ms短縮したが、会話全体や描画負荷込みの改善保証ではない。[計測と再現手順](docs/evaluations/conversation-tempo-2026-09-05.md)
 
-- production JavaScriptが約885kBで、低性能PCや初回Loadに影響する可能性がある。
+- production JavaScriptが約1.16MBで、低性能PCや初回Loadに影響する可能性がある。
 - Pythonの間接依存を完全固定するlock fileがなく、将来のClean installで差が出る可能性がある。
 - 静的MarkupとDeveloper Panel描画は`UIController`から分離したが、対話、Memory、Model操作のEvent調整は同Classに残る。新しい主要画面を足す場合は領域別Controller化が必要。
 - OpenAIの固定`Safety Identifier`はローカル単一利用者用。公開時は個人情報を含まない利用者別識別子へ変える。

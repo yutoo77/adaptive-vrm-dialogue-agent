@@ -49,7 +49,7 @@ test("secondary controls stay behind progressive disclosure", async ({ page }) =
   await page.goto("/");
 
   await expect(page.locator(".stage-world")).toBeVisible();
-  await expect(page.locator(".stage-moon")).toBeVisible();
+  await expect(page.locator(".stage-world")).toHaveCSS("background-image", /moonlit-room.*\.webp/);
   const modelPicker = page.locator("#settings-character .file-button");
   await expect(modelPicker).toBeHidden();
 

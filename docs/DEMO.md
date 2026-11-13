@@ -6,7 +6,7 @@ This guide provides a repeatable three-minute demonstration and a one-minute sho
 
 1. Complete `./setup.ps1` and start VOICEVOX if voice output is required.
 2. Put a permitted VRM at `frontend/public/models/private/character.vrm`, or prepare it for selection in the browser.
-3. Run `./start_demo.ps1` and confirm `月白 しずく`, the `Mock` provider badge, response style `自然に`, and the Avatar or placeholder. Mock means fixed test replies, not a local LLM. The model name and Character Profile version are under `表示を調整` (version in `診断情報`).
+3. Run `./start_demo.ps1` and confirm `月白 しずく`, the `Mock` provider badge, response style `自然に`, and the Avatar or VRM picker. Mock uses fixed test replies. The model name and Character Profile version are under `キャラクターを調整 → 診断情報`.
 4. If voice output is part of the demo, open `設定 → 音声`, then close settings, send one short message, and confirm that VOICEVOX plays it. The short failure message opens the full details; a healthy idle state is not repeated on the main screen.
 5. Do not show API keys, local files, terminal logs, microphone device names, or private long-term memory in a recording.
 
@@ -26,7 +26,7 @@ Show the flow:
 
 1. the Avatar enters `thinking`;
 2. reply text appears incrementally through the typed NDJSON stream;
-3. the final schema validates before the UI displays the selected emotion, intensity, gesture, and cue count;
+3. the final schema validates before the response is committed and the selected expression and gesture take effect;
 4. VOICEVOX begins from the first closed sentence while later text is still arriving;
 5. the mouth follows the five-vowel timeline and the Avatar returns to a weakened emotional baseline, or `idle` when the result is neutral.
 
@@ -34,7 +34,9 @@ Mention that arbitrary bone names and scripts are not accepted. The plan is limi
 
 Change `返答` from `自然に` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or a hidden psychological profile from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
 
-Optional continuity check: send `今日は疲れた` and then a neutral follow-up such as `そうなんだ`. The second response should show `余韻` rather than starting a new large gesture, while the weakened gentle expression, gaze, and breathing remain. Then send `少し気持ちが軽くなった` and confirm that the explicit recovery replaces the old gentle state. This state remains in RAM for at most two turns and is cleared by `新しい会話`.
+Open the history button at the top right to read the retained conversation. A clipped reply also has a `全文を読む` button, which opens at the start of that reply.
+
+Optional continuity check: send `今日は疲れた` and then a neutral follow-up such as `そうなんだ`. Watch for a weakened gentle expression, gaze, and breathing across the follow-up. Then send `少し気持ちが軽くなった` and check the change in expression. This state remains in RAM for at most two turns and is cleared by `新しい会話`.
 
 If a response remains in `thinking`, the send button changes to `応答を停止`. Stopping returns the Avatar to `idle` without adding an assistant message or saving that turn to session or long-term memory. The default Mock is intentionally fast, so use the automated browser scenario and the cancellation evaluation record as repeatable evidence instead of adding an artificial production delay only for the live demo.
 

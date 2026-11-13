@@ -10,14 +10,6 @@ import {
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
 import { icon } from "./icons";
 
-export function createEmptyDialogue(): string {
-  return `<div class="dialogue-empty">
-    <span class="empty-conversation-mark" aria-hidden="true">${icon("conversation")}</span>
-    <h3>何から話そう？</h3>
-    <p>今日のことでも、気になっていることでも。</p>
-  </div>`;
-}
-
 export function createAppMarkup(): string {
   const stateButtons = CHARACTER_STATES.map((state) => {
     const preset = getCharacterStatePreset(state);
@@ -95,7 +87,6 @@ export function createAppMarkup(): string {
           <section class="dialogue-section">
             <div class="conversation-header">
               <div class="conversation-heading">
-                <h2 id="conversation-title">会話</h2>
                 <p class="connection-status"><small id="dialogue-provider" class="dialogue-provider" data-status="offline" aria-describedby="dialogue-privacy">確認中</small><span id="dialogue-provider-note"></span></p>
               </div>
               <div class="conversation-actions">
@@ -105,9 +96,7 @@ export function createAppMarkup(): string {
               </div>
             </div>
             <span id="dialogue-memory" hidden>直近 0 / 10往復（RAM）</span>
-            <div id="dialogue-log" class="dialogue-log" role="log" aria-label="会話履歴" aria-live="polite" aria-busy="false" tabindex="0">
-              ${createEmptyDialogue()}
-            </div>
+            <div id="dialogue-presentation"></div>
             <div class="composer">
             <div class="composer-tools">
               <label class="response-style-control" for="response-style-select">

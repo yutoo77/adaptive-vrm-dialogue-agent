@@ -10,6 +10,7 @@ No `node_modules`, Python virtual environment, VOICEVOX Engine, generated voice,
 | --- | ---: | --- | --- |
 | `@pixiv/three-vrm` | 3.5.5 | MIT | [pixiv/three-vrm](https://github.com/pixiv/three-vrm) |
 | `three` | 0.185.1 | MIT | [mrdoob/three.js](https://github.com/mrdoob/three.js) |
+| `react`, `react-dom` | 19.3.1 | MIT | [React](https://github.com/facebook/react) |
 | FastAPI | 0.141.1 | MIT | [fastapi/fastapi](https://github.com/fastapi/fastapi) |
 | faster-whisper | 1.2.1 | MIT | [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
 | HTTPX | 0.28.1 | BSD-3-Clause | [encode/httpx](https://github.com/encode/httpx) |
@@ -21,7 +22,7 @@ Development tools and transitive packages remain subject to the licenses declare
 
 ## Original interface artwork
 
-The stage background, circular window, lattice, water-ripple lines, floating shapes, palette, and state-responsive lighting are created in this repository with CSS and Three.js primitives. They do not use bundled stock images, downloaded textures, or third-party character artwork.
+The dialogue scene uses an original moonlit-room illustration made with OpenAI's built-in image generation tool. `frontend/src/assets/moonlit-room.webp` contains the room artwork. The streaming references informed the layout. Their images and character assets are excluded from the project. The experience stage uses CSS and Three.js primitives.
 
 ## VOICEVOX and 冥鳴ひまり
 

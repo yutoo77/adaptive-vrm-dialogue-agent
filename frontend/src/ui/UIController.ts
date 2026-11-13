@@ -23,7 +23,8 @@ import type { SpeechStatus } from "../speech/types";
 import type { MicrophoneOption, VoiceInputStatus } from "../transcription/types";
 import { VoiceDraft } from "../transcription/VoiceDraft";
 import { getCharacterStatePreset } from "../vrm/CharacterStatePresets";
-import { createAppMarkup, createEmptyDialogue, performanceEmotionLabel } from "./createAppMarkup";
+import { createAppMarkup, performanceEmotionLabel } from "./createAppMarkup";
+import { DialoguePresentation } from "./DialoguePresentation";
 import { icon } from "./icons";
 import { renderDeveloperPanel } from "./renderDeveloperPanel";
 
@@ -60,6 +61,7 @@ export class UIController {
 
   private readonly abortController = new AbortController();
   private readonly voiceDraft: VoiceDraft;
+  private readonly presentation: DialoguePresentation;
   private actions: UIActions | null = null;
   private warnings: string[] = [];
   private currentState: CharacterState = "idle";
@@ -72,7 +74,6 @@ export class UIController {
   private dialogueModel = "—";
   private characterProfileId = "—";
   private characterProfileVersion = "—";
-  private characterShortName = "キャラクター";
   private dialogueMemoryTurns = 0;
   private dialogueMemoryMaxTurns = 10;
   private dialogueSummaryAvailable = false;
@@ -97,6 +98,7 @@ export class UIController {
   public constructor(private readonly root: HTMLElement) {
     this.root.innerHTML = createAppMarkup();
     this.viewport = this.required("#character-viewport");
+    this.presentation = new DialoguePresentation(this.required("#dialogue-presentation"));
     this.voiceDraft = new VoiceDraft(this.required("#dialogue-input"), () => this.resizeComposer(), this.abortController.signal);
     this.registerEvents();
     this.updateState("idle");
@@ -336,60 +338,19 @@ export class UIController {
   }
 
   public appendDialogueMessage(role: DialogueRole, text: string): void {
-    const log = this.required("#dialogue-log");
-    log.querySelector(".dialogue-empty")?.remove();
-
-    const message = document.createElement("article");
-    message.className = `dialogue-message is-${role}`;
-    const label = document.createElement("span");
-    label.textContent = role === "user" ? "あなた" : this.characterShortName;
-    const body = document.createElement("p");
-    body.textContent = text;
-    message.append(label, body);
-    log.append(message);
-
-    const messages = log.querySelectorAll(".dialogue-message");
-    if (messages.length > 20) messages[0]?.remove();
-    log.scrollTop = log.scrollHeight;
+    this.presentation.append(role, text);
   }
 
   public updateStreamingAssistantMessage(text: string): void {
-    const log = this.required("#dialogue-log");
-    log.querySelector(".dialogue-empty")?.remove();
-    let message = log.querySelector<HTMLElement>('[data-streaming-assistant="true"]');
-    if (!message) {
-      message = document.createElement("article");
-      message.className = "dialogue-message is-assistant is-streaming";
-      message.dataset["streamingAssistant"] = "true";
-      message.setAttribute("aria-hidden", "true");
-      const label = document.createElement("span");
-      label.textContent = this.characterShortName;
-      const body = document.createElement("p");
-      message.append(label, body);
-      log.append(message);
-      const messages = log.querySelectorAll(".dialogue-message");
-      if (messages.length > 20) messages[0]?.remove();
-    }
-    const body = message.querySelector("p");
-    if (body) body.textContent = text;
-    log.scrollTop = log.scrollHeight;
+    this.presentation.stream(text);
   }
 
   public completeStreamingAssistantMessage(text: string): void {
-    const message = this.root.querySelector<HTMLElement>('[data-streaming-assistant="true"]');
-    if (!message) {
-      this.appendDialogueMessage("assistant", text);
-      return;
-    }
-    const body = message.querySelector("p");
-    if (body) body.textContent = text;
-    message.classList.remove("is-streaming");
-    message.removeAttribute("aria-hidden");
-    delete message.dataset["streamingAssistant"];
+    this.presentation.complete(text);
   }
 
   public discardStreamingAssistantMessage(): void {
-    this.root.querySelector<HTMLElement>('[data-streaming-assistant="true"]')?.remove();
+    this.presentation.discard();
   }
 
   public updateDialogueMemory(turns: number, maxTurns: number): void {
@@ -429,8 +390,7 @@ export class UIController {
   }
 
   public resetDialogueConversation(): void {
-    const log = this.required("#dialogue-log");
-    log.innerHTML = createEmptyDialogue();
+    this.presentation.reset();
     this.required<HTMLTextAreaElement>("#dialogue-input").value = "";
     this.voiceDraft.cancelPending();
     this.resizeComposer();
@@ -457,9 +417,8 @@ export class UIController {
         this.required(`#latency-${stage}`).textContent = "—";
       });
     }
-    const log = this.required("#dialogue-log");
     const submit = this.required<HTMLButtonElement>("#dialogue-submit");
-    log.setAttribute("aria-busy", String(busy));
+    this.presentation.setBusy(busy);
     submit.innerHTML = icon(busy ? "stop" : "send");
     submit.dataset["mode"] = busy ? "cancel" : "send";
     submit.setAttribute("aria-label", busy ? "応答を停止" : "送信");
@@ -598,6 +557,7 @@ export class UIController {
 
   public dispose(): void {
     this.abortController.abort();
+    this.presentation.dispose();
     this.root.replaceChildren();
   }
 
@@ -969,7 +929,7 @@ export class UIController {
   private updateCharacterProfile(profile: CharacterProfile): void {
     this.characterProfileId = profile.id;
     this.characterProfileVersion = profile.version;
-    this.characterShortName = profile.short_name;
+    this.presentation.setSpeaker(profile.short_name);
 
     const name = this.required("#character-name");
     const version = this.required("#character-version");
@@ -981,10 +941,6 @@ export class UIController {
     tagline.textContent = profile.tagline;
     tagline.hidden = false;
     this.required("#character-monogram").textContent = profile.short_name.at(0) ?? "月";
-    this.required("#conversation-title").textContent = `${profile.short_name}と話す`;
-    this.root.querySelectorAll<HTMLElement>(".dialogue-message.is-assistant > span").forEach((label) => {
-      label.textContent = profile.short_name;
-    });
 
     const [primary, light, accent] = profile.theme_colors;
     this.root.style.setProperty("--character-primary", primary);

@@ -1,4 +1,5 @@
 import "./styles.css";
+import "./ui/dialogueScene.css";
 
 import { DialogueClient } from "./dialogue/DialogueClient";
 import { DialogueController } from "./dialogue/DialogueController";

@@ -1,5 +1,24 @@
 # 会話画面のUI設計メモ
 
+## 2026-11-13 月明かりの対話シーン
+
+部屋の奥行きと大きなキャラクターは参考A、画面端に履歴を添える配置は参考Bから着想を得た。しずくを中央に配置し、右端は最大3件、長文は下部の3行から全文へ開く。760px以下では履歴をボタンから開く。スマホ幅でも入力欄と送信／停止が画面内に収まることを確認する。 [参考A](https://www.twitch.tv/mutsukinemo/clip/TenuousCrypticKoupreyThisIsSparta-luUnUyUDu7SplXoS)・[参考B](https://chzzk.naver.com/video/33554)
+
+`DialoguePresentation.tsx`のReact rootにセリフ、履歴、履歴dialogをまとめる。生成中のセリフは暫定扱い。停止や失敗で暫定文を取り除き、最後の確定済みセリフへ戻る。従来のVRM Viewerをモード間で移動し、セリフの更新と独立した描画を保つ。テキスト入力、録音、音声、記憶の操作には従来のコントローラを使う。Reactとオリジナル背景をバンドルし、利用時の外部通信やAPI料金は増えない。JavaScriptは約222kB増えた。
+
+背景は組み込み画像生成で作成し、約64kBのWebPへ変換した。生成時の指定は、16:10のアニメ会話ゲーム向け背景、青い月明かりの読書室、左に窓・本・ランプ、中央にVRMを置く余白、右に文字を載せる壁、手前に木の机とカップ。画像内の人物、ロゴ、UI、文字、配信素材は除外した。
+
+<details>
+<summary>背景生成プロンプト</summary>
+
+> Use case: stylized-concept. Create an original anime visual novel environment plate for the background of a live VRM conversation. 16:10 landscape, eye-level straight-on, a quiet Japanese moonlit reading room in blue hour, clean hand-painted animation background, softly simplified shapes and deliberate atmosphere. One tall blue window on the left with a small waning moon and pale blue curtains, a low shelf and two simple books far left, a small warm amber lamp in the left midground, muted pale blue wall and warm paper surfaces. Leave the central 45% with softly lit low-detail wall and empty space for a large 3D character, and the right third as a calm slightly darker blue wall with minimal visual noise for a few overlaid conversation lines. Across the bottom 12% a low continuous foreground pale wooden desk with a single white teacup at the far left, eye-level seated perspective. Restrained slate blue, ink indigo, pale cloud blue, warm ivory, small amber accents. Gentle warm domestic atmosphere, diffuse moonlight, visually strong but clean hand-drawn art direction. Room only, strictly no human, no character silhouette, no UI, no text, no logo, no watermark, no neon, no copied streamer props. Full bleed.
+
+</details>
+
+確認は1440×900と390×844の長文・履歴、生成途中からの停止／失敗、VRM未読込、既存の設定・モード切替・録音・先行音声を対象とする。`SCENE_SCREENSHOTS=1`で追加のブラウザテストからスクリーンショットを取得できる。実マイクとスマートフォン実機の操作感は利用者による確認を残す。
+
+## 2026-09-05 改修時の記録
+
 2026-09-05 / v0.6.0からの作業版。機能追加ではなく、会話画面の読みやすさと操作の整理を対象にする。
 
 ## 主な利用場面
