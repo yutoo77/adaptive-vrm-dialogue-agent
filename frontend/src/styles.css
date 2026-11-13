@@ -95,7 +95,6 @@ button, summary, a, input, select, textarea, [tabindex] { outline-offset: 3px; }
 .control-panel { min-width: 0; min-height: 0; border-left: 1px solid var(--line); }
 .dialogue-section { display: flex; height: 100%; min-height: 0; flex-direction: column; }
 .conversation-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 24px 26px 20px; border-bottom: 1px solid var(--line); }
-.conversation-header h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .02em; }
 .connection-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .dialogue-provider { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .dialogue-provider::before { width: 5px; height: 5px; border-radius: 50%; background: currentColor; content: ""; }
@@ -106,11 +105,6 @@ button, summary, a, input, select, textarea, [tabindex] { outline-offset: 3px; }
 .conversation-reset-label { display: none; }
 .dialogue-log { display: flex; flex: 1; min-height: 100px; flex-direction: column; gap: 26px; overflow-y: auto; padding: 28px 24px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b9c5d7 transparent; scrollbar-gutter: stable; }
 .dialogue-log:focus-visible { outline-offset: -4px; }
-.dialogue-empty { margin: auto; max-width: 100%; padding: 24px 0; text-align: center; }
-.empty-conversation-mark { display: grid; width: 48px; height: 48px; place-items: center; margin: 0 auto 18px; border: 1px solid var(--line); border-radius: 16px; color: #6681ae; background: #f9fbfe; }
-.empty-conversation-mark .ui-icon { width: 24px; height: 24px; }
-.dialogue-empty h3 { margin: 0 0 9px; color: var(--ink); font-size: 19px; font-weight: 550; }
-.dialogue-empty p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
 .dialogue-message { width: fit-content; max-width: 100%; }
 .dialogue-message.is-user { align-self: flex-end; max-width: 90%; padding: 12px 16px; border-radius: 16px 16px 4px 16px; background: var(--accent-soft); }
 .dialogue-message.is-assistant { padding: 0 4px; }
@@ -306,15 +300,10 @@ input[type="range"] { width: 100%; min-height: 28px; accent-color: var(--accent)
   .performance-status { padding-left: 12px; }
   .control-panel { border-left: 0; }
   .conversation-header { padding: 14px 16px; }
-  .conversation-header h2 { font-size: 17px; }
   .connection-status { margin-top: 4px; }
   .dialogue-log { gap: 20px; padding: 18px 16px; }
   .dialogue-message.is-user { padding: 10px 14px; }
   .dialogue-message p { line-height: 1.75; }
-  .dialogue-empty { padding: 8px 0; }
-  .empty-conversation-mark { display: none; }
-  .dialogue-empty h3 { font-size: 18px; }
-  .dialogue-empty p { font-size: 13px; }
   .composer { padding: 8px 16px max(12px, env(safe-area-inset-bottom)); }
   .composer-tools { min-height: 36px; margin-bottom: 6px; }
   .composer-hint { display: none; }

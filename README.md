@@ -14,7 +14,7 @@ Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声
 
 ![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
 
-> 上はv0.6時点の画面です。2026-09-05のUI改修では背景装飾を整理し、会話本文を16pxに、設定を別パネルに変更しています。画像の更新は公開用素材の確認後に行います。AvatarSample_A © pixiv Inc. / pixiv VRoid Project。モデル本体はRepositoryへ含めていません。
+> 1440×900のローカルMock対話画面。AvatarSample_A © pixiv Inc. / pixiv VRoid Project。モデル本体はRepositoryへ含めていません。
 
 ## 解決したい課題
 
@@ -46,9 +46,9 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 
 ### 画面の操作
 
-上部の `対話 / 体験` で切り替えます。普段の対話画面はそのまま残し、別の体験「月待ちの便り」で、しずくと小箱を開ける短い謎解きを遊べます。モードを往復しても各画面の履歴・下書き・盤面は保持し、切替時には生成・発話・録音を停止します。ページ再読込後の進行保存はありません。
+上部の `対話 / 体験` で切り替えます。体験「月待ちの便り」では、しずくと小箱を開ける短い謎解きを遊べます。モードを往復しても各画面の履歴・下書き・盤面は保持し、切替時には生成・発話・録音を停止します。ページ再読込後の進行保存はありません。
 
-会話欄の下からメッセージを送ります。PCではEnterで送信、Shift + Enterで改行できます。複数行の下書きは入力欄が広がり、日本語の変換確定では送信しません。送信中は同じボタンが停止に変わります。
+しずくの下にある入力欄からメッセージを送ります。PCではEnterで送信、Shift + Enterで改行できます。複数行の下書きは入力欄が広がり、日本語の変換確定では送信しません。送信中は同じボタンが停止に変わります。右端に過去の会話を最大3件表示し、履歴ボタンで保持中の会話を開けます。長い返答には「全文を読む」が出ます。狭い画面では履歴ボタンから開きます。
 
 「設定」から音声と明示登録の記憶を開けます。「表示を調整」はモデル・表情・カメラへ直接移動します。設定を閉じても会話と下書きは維持され、Escapeでも閉じられます。音声エラーの「詳細」には元のエラーと回復方法を残しています。
 
@@ -68,7 +68,7 @@ Adaptive Character Labでは、次の方針でこの問題を扱います。
 | Embodied Continuity | Session別RAM感情、最大2 Turnの減衰、明示変化の優先、反復Gesture抑制、視線6種、発話後の感情Baseline |
 | Memory | Session別直近10往復、決定的要約、明示登録だけのSQLite長期記憶、CRUD、文字重なり検索 |
 | Cooperative experience | 独立した「体験」タブ、3か所の調査、月の栞の配置、任意の3段階ヒント、決定的な正誤判定、静かな結末。APIなしでも完遂可能 |
-| UI / Visual identity | 白と青を軸にした会話ワークスペース、16px本文、静かな月のStage、音声・記憶・キャラクター設定のdialog、外部画像Assetなし |
+| UI / Visual identity | 月明かりの部屋、セリフと右端の直近履歴、全文表示、音声・記憶・キャラクター設定のdialog |
 | Accessibility / UX | `prefers-reduced-motion`対応、演技強度3段階、Keyboard focus、文脈に応じた状態表示、段階的開示 |
 | Observability | 認識・初文・本文完了・発話開始の直近時間、Backend Request ID、Providerと失敗CodeのLog |
 
@@ -124,17 +124,17 @@ VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、�
 
 ### 9. 会話を主役にする情報設計
 
-初期画面にはAvatar、会話履歴、入力だけを常時表示し、音声、記憶、演技調整、診断情報は必要なときに開く段階的開示へ整理しています。待機中の正常状態は繰り返し表示せず、処理中・失敗・利用者の判断が必要な状態だけを会話の近くへ出します。Nielsenの「システム状態の可視化」「利用者による制御」「不要情報を減らす」を判断基準として、Mobileでも入力欄が初期Viewport内に残ることをBrowser testで固定しています。
+Avatarと現在のセリフを部屋の中央に置き、履歴の全文、音声、記憶、演技調整、診断情報は必要なときに開きます。処理中・失敗・利用者の判断が必要な状態を会話の近くに表示します。Mobileでも入力欄が初期Viewport内に残ることをBrowser testで確認しています。
 
-### 10. Assetに依存しないVisual identity
+### 10. 月明かりの対話シーン
 
-Avatarを囲む円窓、格子、水紋、浮遊する小片は、画像素材ではなくCSSのGradient、Border、Mask、Animationで描画しています。深藍・白練・藤色を基調にし、`CharacterState`を反映した`data-state`だけで、聞き取り時は青磁、思考時は藤色、発話時は水紋へ控えめな変化を加えます。環境演出は`prefers-reduced-motion`で停止し、Avatar制御や対話処理とは分離しています。
+青い窓と暖色のランプ、手前の机を描いた背景をローカルで読み込みます。同じ画像の机部分をCanvasの手前に重ね、しずくを部屋の中に配置します。セリフと履歴はReactで描画し、VRMと音声のインスタンスは会話の更新やモード切り替えでも再利用します。
 
 ## システム構成
 
 ```mermaid
 flowchart LR
-    User["User\nText / Push-to-Talk"] --> UI["Vanilla TypeScript UI"]
+    User["User\nText / Push-to-Talk"] --> UI["TypeScript UI / React dialogue scene"]
     UI --> Style["Response style\nexplicit 4 options"]
     Profile["Character Profile v1\ntext / voice / performance / theme"] --> UI
     Style --> Dialogue["DialogueController"]
@@ -169,7 +169,7 @@ flowchart LR
 
 | Layer | Technology | 選定理由 |
 | --- | --- | --- |
-| Frontend | TypeScript 6, Vite 8, vanilla DOM | 単一画面でFramework追加による複雑さを増やさず、型検査と責務分離を保つため |
+| Frontend | TypeScript 6, Vite 8, React 19、既存DOM | セリフと履歴を一つの表示状態から描画し、入力や設定の移行は段階的に進めるため |
 | 3D / Avatar | Three.js, `@pixiv/three-vrm` | WebGLでVRM 1.0とMToonを扱い、Model差異を吸収するため |
 | Backend | Python 3.12, FastAPI, Uvicorn | SecretをBrowserから分離し、Pydanticで入出力を検証するため |
 | Dialogue | Local Mock / OpenAI Responses API | 無料で再現できる経路と、交換可能な実Providerを分離するため |
@@ -424,7 +424,7 @@ adaptive-vrm-dialogue-agent/
 - Character Profileは現在`月白 しずく v1.1.0`のCode定義1種類です。複数Profile切替、UI編集、独自VRMとの統合、聴取評価は未完了です。
 - 短期感情はRAM内で最大2 Turnだけ継続します。Mock分類と明示変化の補正は日本語Keyword Ruleなので、皮肉、複合感情、未知の言い換えを正しく理解するとは限りません。最適な減衰時間も利用者評価前の初期値です。
 - Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
-- production JavaScriptは約934kBで、Viteの500kB警告が出ます。
+- production JavaScriptは約1.16MBで、Viteの500kB警告が出ます。部屋のWebPは約64kBです。
 - UIの静的MarkupとDeveloper Panel描画は分離済みですが、`UIController`には対話・Memory・Model操作のEvent制御が残り、主要画面を増やす場合は領域別Controller化が必要です。
 - 公式Sample Avatarは動作確認に適しますが、作品の独自性は自作Avatarより弱くなります。
 - VRMA、Motion Capture、複数Avatar、Mobile性能保証は対象外です。

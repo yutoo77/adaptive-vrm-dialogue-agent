@@ -71,6 +71,9 @@ export class VRMViewer {
   private readonly frameRate = new FrameRateMeter();
   private readonly placeholder = new Group();
   private readonly lookAtTarget = new Object3D();
+  private readonly ambientLight = new AmbientLight(new Color("#eef1ff"), 1.55);
+  private readonly keyLight = new DirectionalLight(new Color("#fffdfb"), 2.7);
+  private readonly rimLight = new DirectionalLight(new Color("#9da9eb"), 1.3);
   private readonly controller: CharacterController;
   private readonly idleMotion = new IdleMotionController();
   private readonly gazeMotion = new GazeMotionController();
@@ -206,6 +209,9 @@ export class VRMViewer {
 
   public setCompanionFraming(enabled: boolean): void {
     this.companionFraming = enabled;
+    this.ambientLight.intensity = enabled ? 2.35 : 1.55;
+    this.keyLight.intensity = enabled ? 4.25 : 2.7;
+    this.rimLight.intensity = enabled ? 2.25 : 1.3;
     this.applyFraming();
   }
 
@@ -270,17 +276,11 @@ export class VRMViewer {
 
   private setupScene(): void {
     this.scene.background = null;
-    this.scene.add(new AmbientLight(new Color("#eef1ff"), 2.35));
-
-    const keyLight = new DirectionalLight(new Color("#fffdfb"), 4.25);
-    keyLight.position.set(2.4, 4.2, 3.2);
-    keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
-    this.scene.add(keyLight);
-
-    const rimLight = new DirectionalLight(new Color("#9da9eb"), 2.25);
-    rimLight.position.set(-3.5, 2.6, -1.5);
-    this.scene.add(rimLight);
+    this.keyLight.position.set(2.4, 4.2, 3.2);
+    this.keyLight.castShadow = true;
+    this.keyLight.shadow.mapSize.set(1024, 1024);
+    this.rimLight.position.set(-3.5, 2.6, -1.5);
+    this.scene.add(this.ambientLight, this.keyLight, this.rimLight);
 
     const floor = new Mesh(new PlaneGeometry(8, 8), new ShadowMaterial({ color: 0x59668f, opacity: 0.14 }));
     floor.rotation.x = -Math.PI / 2;
@@ -420,9 +420,9 @@ export class VRMViewer {
     const modelY = this.currentModelBaseY + settings.modelOffset * this.currentModelHeight;
     this.currentVRM.scene.position.y = modelY;
     this.controller.setRootBaseY(modelY);
-    // A short companion viewport needs a face-readable crop, without changing user settings.
-    const targetY = height * (this.companionFraming ? 0.85 : 0.69) + settings.lookAtOffset * this.currentModelHeight;
-    const frameHeight = height * (this.companionFraming ? 0.44 : 0.92);
+    // Frame the upper body above the desk in dialogue and the face in the shorter experience slot.
+    const targetY = height * (this.companionFraming ? 0.85 : 0.82) + settings.lookAtOffset * this.currentModelHeight;
+    const frameHeight = height * (this.companionFraming ? 0.44 : 0.58);
     const distance =
       (frameHeight / (2 * Math.tan(MathUtils.degToRad(this.camera.fov * 0.5)))) * settings.distance;
     this.camera.position.set(0, targetY + settings.heightOffset * this.currentModelHeight, distance);
