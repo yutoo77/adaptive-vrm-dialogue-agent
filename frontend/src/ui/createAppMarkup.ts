@@ -308,7 +308,7 @@ export function createAppMarkup(): string {
                 <div class="inner-tool-content camera-controls">
                   ${cameraRange("distance", "距離", 0.65, 1.8, 0.01, 1)}
                   ${cameraRange("heightOffset", "高さ", -0.5, 0.5, 0.01, 0)}
-                  ${cameraRange("lookAtOffset", "視線", -0.4, 0.4, 0.01, 0)}
+                  ${cameraRange("lookAtOffset", "上下の向き", -0.4, 0.4, 0.01, 0)}
                   ${cameraRange("modelOffset", "位置", -0.6, 0.6, 0.01, 0)}
                   ${cameraRange("scale", "大きさ", 0.65, 1.45, 0.01, 1)}
                   <button id="camera-reset" class="text-button" type="button">標準へ戻す</button>

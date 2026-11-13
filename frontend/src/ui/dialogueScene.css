@@ -265,8 +265,14 @@
 }
 
 #dialogue-workspace .recent-line.is-user {
-  margin-left: 18px;
+  margin-left: 28px;
   color: #dce5f5;
+  text-align: right;
+}
+
+#dialogue-workspace .recent-line.is-assistant {
+  margin-right: 20px;
+  text-align: left;
 }
 
 #dialogue-workspace .recent-line p {

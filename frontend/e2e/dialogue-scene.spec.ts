@@ -198,9 +198,48 @@ test("the current reply leads the scene while the preview keeps three previous l
   }
   await expect(preview).not.toContainText("こんばんは");
   await expect(preview).not.toContainText("今日は月がきれいだね。");
+  const userLine = preview.locator(".is-user").last();
+  const assistantLine = preview.locator(".is-assistant");
+  await expect(userLine).toHaveCSS("text-align", "right");
+  await expect(assistantLine).toHaveCSS("text-align", "left");
+  for (const line of [userLine, assistantLine]) {
+    await expect(line).toHaveCSS("font-size", "14px");
+    await expect(line).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(line.locator("span")).toHaveClass("visually-hidden");
+  }
+  const userBounds = await userLine.boundingBox();
+  const assistantBounds = await assistantLine.boundingBox();
+  expect(userBounds!.x).toBeGreaterThan(assistantBounds!.x);
+  expect(userBounds!.x + userBounds!.width).toBeGreaterThan(assistantBounds!.x + assistantBounds!.width);
   await expect(page.locator("#history-dialog")).toBeHidden();
   await expect(page.locator("#dialogue-log .dialogue-message")).toHaveCount(6);
   await screenshot(page, info, "scene-desktop.png");
+});
+
+test("consecutive user lines keep the same alignment after cancelled replies", async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await holdReply(page, true);
+  await replyWith(page, [LAST_REPLY]);
+  await page.route("**/api/dialogue/sessions/*/active", async route => {
+    const sessionId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+    await route.fulfill({ json: { session_id: sessionId, cancelled: true } });
+  });
+  await page.goto("/");
+  await sendMessage(page, "しおりはどこ？", LAST_REPLY);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.getByRole("textbox", { name: "メッセージ", exact: true }).fill(STREAM_PROMPT);
+    await page.getByRole("button", { name: "送信", exact: true }).click();
+    await expect(page.locator("#current-utterance")).toHaveText("考え中…");
+    await page.getByRole("button", { name: "応答を停止", exact: true }).click();
+    await expect(page.getByRole("button", { name: "送信", exact: true })).toBeEnabled();
+  }
+  await expect(page.locator("#current-utterance p")).toHaveText(LAST_REPLY);
+  const recent = page.locator("#recent-dialogue");
+  await expect(recent.locator(".is-user")).toHaveCount(3);
+  await expect(recent.locator(".is-assistant")).toHaveCount(0);
+  for (const line of await recent.locator(".is-user").all()) {
+    await expect(line).toHaveCSS("text-align", "right");
+  }
 });
 
 test("long replies stay in bounds and the transcript is reachable on desktop and mobile", async ({ page }, info) => {
