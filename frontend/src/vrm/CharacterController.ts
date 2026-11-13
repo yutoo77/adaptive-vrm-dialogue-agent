@@ -60,10 +60,11 @@ export class CharacterController {
   private ambientGazeY = 0;
   private rootBaseY = 0;
   private lookAtTarget: Object3D<Object3DEventMap> | null = null;
+  private gazeFocus: Object3D<Object3DEventMap> | null = null;
   private readonly euler = new Euler(0, 0, 0, "YXZ");
   private readonly poseQuaternion = new Quaternion();
   private readonly targetQuaternion = new Quaternion();
-  private readonly headWorldPosition = new Vector3();
+  private readonly gazeOrigin = new Vector3();
 
   public constructor(private readonly events: CharacterControllerEvents = {}) {}
 
@@ -112,6 +113,10 @@ export class CharacterController {
   public setRootBaseY(y: number): void {
     this.rootBaseY = y;
     if (this.vrm) this.vrm.scene.position.y = y;
+  }
+
+  public setGazeFocus(focus: Object3D<Object3DEventMap> | null): void {
+    this.gazeFocus = focus;
   }
 
   public setManualExpression(name: string | null, weight = 0): boolean {
@@ -184,6 +189,7 @@ export class CharacterController {
     if (this.vrm?.lookAt) this.vrm.lookAt.target = null;
     this.vrm = null;
     this.lookAtTarget = null;
+    this.gazeFocus = null;
     this.bones.clear();
     this.availableExpressions = [];
     this.blinkExpressions = [];
@@ -312,16 +318,20 @@ export class CharacterController {
   private updateLookAt(): void {
     if (!this.vrm?.lookAt || !this.lookAtTarget) return;
     const preset = getCharacterStatePreset(this.state);
-    const head = this.bones.get(VRMHumanBoneName.Head)?.node;
-    if (!head) return;
-
-    head.getWorldPosition(this.headWorldPosition);
+    if (this.gazeFocus) {
+      this.gazeFocus.getWorldPosition(this.gazeOrigin);
+    } else {
+      const head = this.bones.get(VRMHumanBoneName.Head)?.node;
+      if (!head) return;
+      head.getWorldPosition(this.gazeOrigin);
+      this.gazeOrigin.z += 1.7;
+    }
     const pointerX = preset.gaze.mode === "center" ? 0 : this.pointerX * preset.gaze.pointerInfluence;
     const pointerY = preset.gaze.mode === "center" ? 0 : this.pointerY * preset.gaze.pointerInfluence;
     this.lookAtTarget.position.set(
-      this.headWorldPosition.x + preset.gaze.offsetX + (pointerX + this.ambientGazeX) * 0.28,
-      this.headWorldPosition.y + preset.gaze.offsetY + (pointerY + this.ambientGazeY) * 0.16,
-      this.headWorldPosition.z + 1.7,
+      this.gazeOrigin.x + preset.gaze.offsetX + (pointerX + this.ambientGazeX) * 0.28,
+      this.gazeOrigin.y + preset.gaze.offsetY + (pointerY + this.ambientGazeY) * 0.16,
+      this.gazeOrigin.z,
     );
   }
 

@@ -100,10 +100,10 @@ export function createAppMarkup(): string {
             <div class="composer">
             <div class="composer-tools">
               <label class="response-style-control" for="response-style-select">
-                <span>返答</span>
-                <select id="response-style-select" aria-label="返答の詳しさ" title="次の返答の詳しさを選択">
-                  <option value="concise">短く</option>
-                  <option value="balanced" selected>自然に</option>
+                <span>話し方</span>
+                <select id="response-style-select" aria-label="話し方" title="次の返答の長さや説明の仕方を選択">
+                  <option value="concise">短め</option>
+                  <option value="balanced" selected>ふつう</option>
                   <option value="detailed">詳しく</option>
                   <option value="beginner">やさしく</option>
                 </select>

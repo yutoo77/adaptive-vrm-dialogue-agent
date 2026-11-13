@@ -92,7 +92,8 @@ function DialogueScene({ lines, partial, speaker, busy }: SceneProps) {
   const historyButton = useRef<HTMLButtonElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const lastReply = lines.findLast((line) => line.role === "assistant");
-  const current = partial ?? lastReply;
+  const waiting = busy && !partial && lines.at(-1)?.role !== "assistant";
+  const current = partial ?? (waiting ? undefined : lastReply);
   const recent = lines.filter((line) => line.id !== current?.id).slice(-3);
   const displayed = partial ? [...lines, partial] : lines;
 
@@ -115,11 +116,11 @@ function DialogueScene({ lines, partial, speaker, busy }: SceneProps) {
   }
 
   return <>
-    <CurrentUtterance line={current} speaker={speaker} busy={busy} provisional={partial !== null}
+    <CurrentUtterance line={current} speaker={speaker} busy={waiting} provisional={partial !== null}
       onRead={(button) => openHistory(button, true)} />
     <aside id="recent-dialogue" className="scene-recent" aria-label="最近の会話" hidden={!recent.length}>
       {recent.map((line) => <div className={`recent-line is-${line.role}`} key={line.id}>
-        <span>{line.role === "user" ? "あなた" : speaker}</span>
+        <span className="visually-hidden">{line.role === "user" ? "あなた" : speaker}：</span>
         <p>{line.text}</p>
       </div>)}
     </aside>
@@ -174,7 +175,7 @@ function CurrentUtterance({ line, speaker, busy, provisional, onRead }: Utteranc
   return <section id="current-utterance" className="scene-utterance" data-empty={line ? undefined : "true"}>
     {line ? <>
       <div aria-hidden={provisional || undefined}>
-        <span className="scene-speaker">{busy && !provisional ? "考え中…" : speaker}</span>
+        <span className="scene-speaker">{speaker}</span>
         <p ref={body}>{line.text}</p>
       </div>
       {clipped && !provisional && <button id="read-reply" type="button" className="text-button" aria-haspopup="dialog"

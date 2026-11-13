@@ -41,6 +41,7 @@ import {
 import { clampCameraSettings } from "../utils/math";
 import { getCharacterStatePreset } from "./CharacterStatePresets";
 import { CharacterController } from "./CharacterController";
+import { measureNeutralEyeHeight, resolveCameraFraming } from "./cameraFraming";
 import { FrameRateMeter } from "./FrameRateMeter";
 import { GazeMotionController } from "./GazeMotionController";
 import { IdleMotionController } from "./IdleMotionController";
@@ -83,6 +84,7 @@ export class VRMViewer {
   private currentVRM: VRM | null = null;
   private currentModelHeight = 1.7;
   private currentModelBaseY = 0;
+  private currentModelEyeHeight = 1.7 * 0.9;
   private cameraSettings: CameraSettings = DEFAULT_CAMERA_SETTINGS;
   private companionFraming = false;
   private animationFrameId: number | null = null;
@@ -385,13 +387,15 @@ export class VRMViewer {
     this.measureModel(vrm);
     this.applyFraming();
     this.controller.attachVRM(vrm, this.lookAtTarget);
+    this.controller.setGazeFocus(this.companionFraming ? null : this.camera);
   }
 
   private measureModel(vrm: VRM): void {
     const box = new Box3().setFromObject(vrm.scene);
-    if (box.isEmpty()) {
+    if (box.isEmpty() || ![...box.min.toArray(), ...box.max.toArray()].every(Number.isFinite) || box.max.y <= box.min.y) {
       this.currentModelHeight = 1.7;
       this.currentModelBaseY = 0;
+      this.currentModelEyeHeight = measureNeutralEyeHeight(vrm, this.currentModelHeight);
       this.events.onWarning("モデルの大きさを取得できなかったため、標準値で表示します。");
       return;
     }
@@ -403,10 +407,13 @@ export class VRMViewer {
     vrm.scene.position.y -= box.min.y;
     vrm.scene.position.z -= center.z;
     this.currentModelBaseY = vrm.scene.position.y;
+    vrm.scene.updateMatrixWorld(true);
+    this.currentModelEyeHeight = measureNeutralEyeHeight(vrm, this.currentModelHeight);
   }
 
   private applyFraming(): void {
     const settings = this.cameraSettings;
+    this.controller.setGazeFocus(this.companionFraming ? null : this.camera);
     if (!this.currentVRM) {
       this.placeholder.scale.setScalar(settings.scale);
       this.placeholder.position.y = settings.modelOffset;
@@ -415,17 +422,15 @@ export class VRMViewer {
       return;
     }
 
-    const height = this.currentModelHeight * settings.scale;
     this.currentVRM.scene.scale.setScalar(settings.scale);
     const modelY = this.currentModelBaseY + settings.modelOffset * this.currentModelHeight;
     this.currentVRM.scene.position.y = modelY;
     this.controller.setRootBaseY(modelY);
-    // Frame the upper body above the desk in dialogue and the face in the shorter experience slot.
-    const targetY = height * (this.companionFraming ? 0.85 : 0.82) + settings.lookAtOffset * this.currentModelHeight;
-    const frameHeight = height * (this.companionFraming ? 0.44 : 0.58);
-    const distance =
-      (frameHeight / (2 * Math.tan(MathUtils.degToRad(this.camera.fov * 0.5)))) * settings.distance;
-    this.camera.position.set(0, targetY + settings.heightOffset * this.currentModelHeight, distance);
+    const { cameraY, targetY, distance } = resolveCameraFraming(
+      this.currentModelHeight, this.currentModelEyeHeight, this.currentModelBaseY,
+      settings, this.companionFraming, this.camera.fov,
+    );
+    this.camera.position.set(0, cameraY, distance);
     this.camera.lookAt(0, targetY, 0);
   }
 

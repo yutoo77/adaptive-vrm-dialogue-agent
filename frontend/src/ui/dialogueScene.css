@@ -258,23 +258,21 @@
 #dialogue-workspace .recent-line {
   min-width: 0;
   margin: 0;
-  padding: 6px 10px;
-  border-left: 1px solid rgb(221 231 250 / 46%);
-  background: linear-gradient(90deg, rgb(26 36 57 / 63%), rgb(26 36 57 / 24%));
-  font-size: 13px;
+  padding: 4px 0;
+  font-size: 14px;
   line-height: 1.5;
+  text-shadow: 0 1px 3px rgb(20 30 49 / 70%);
 }
 
-#dialogue-workspace .recent-line > span {
-  color: #cad8ef;
-  font-size: 12px;
-  font-weight: 600;
+#dialogue-workspace .recent-line.is-user {
+  margin-left: 18px;
+  color: #dce5f5;
 }
 
 #dialogue-workspace .recent-line p {
   display: -webkit-box;
   overflow: hidden;
-  margin: 2px 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -352,6 +350,10 @@
 
 #dialogue-workspace :is(.voice-input-status, .speech-status) {
   padding-block: 2px;
+}
+
+#dialogue-workspace :is(.voice-input-status, .speech-status) p {
+  font-size: 13px;
 }
 
 #dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]):has(+ .speech-status:is([data-speech-state="error"], [data-speech-state="unavailable"])) {

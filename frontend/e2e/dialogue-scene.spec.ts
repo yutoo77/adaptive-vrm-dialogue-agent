@@ -14,6 +14,7 @@ const STREAM_PROMPT = "しおりの続きを教えて";
 const PARTIAL_REPLY = "窓を開けると、冷たい夜風が";
 const STREAM_ERROR = "返答を続けられませんでした。もう一度お試しください。";
 const FAIL_STREAM_EVENT = "dialogue-scene-test:fail-stream";
+const FIRST_CHUNK_EVENT = "dialogue-scene-test:first-chunk";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/models/private/character.vrm", route => route.fulfill({ status: 404 }));
@@ -56,8 +57,8 @@ async function screenshot(page: Page, info: TestInfo, file: string): Promise<voi
   }
 }
 
-async function holdReply(page: Page): Promise<void> {
-  await page.addInitScript(({ prompt, partial, error, failureEvent }) => {
+async function holdReply(page: Page, delayFirstChunk = false): Promise<void> {
+  await page.addInitScript(({ prompt, partial, error, failureEvent, firstChunkEvent, delayFirstChunk }) => {
     const fetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
       if (!String(input).endsWith("/api/dialogue/stream") || typeof init?.body !== "string") {
@@ -79,7 +80,12 @@ async function holdReply(page: Page): Promise<void> {
           const abort = () => controller.error(signal?.reason);
           signal?.addEventListener("abort", abort, { once: true });
           send({ type: "start", request_id: requestId, provider: "mock", model: "mock" });
-          send({ type: "text_delta", delta: partial, elapsed_ms: 1 });
+          const sendFirstChunk = () => send({ type: "text_delta", delta: partial, elapsed_ms: 1 });
+          if (delayFirstChunk) {
+            window.addEventListener(firstChunkEvent, sendFirstChunk, signal ? { once: true, signal } : { once: true });
+          } else {
+            sendFirstChunk();
+          }
           window.addEventListener(failureEvent, () => {
             signal?.removeEventListener("abort", abort);
             send({ type: "error", error: { code: "stream_failed", message: error, request_id: requestId } });
@@ -89,8 +95,91 @@ async function holdReply(page: Page): Promise<void> {
       });
       return Promise.resolve(new Response(stream, { headers: { "Content-Type": "application/x-ndjson" } }));
     };
-  }, { prompt: STREAM_PROMPT, partial: PARTIAL_REPLY, error: STREAM_ERROR, failureEvent: FAIL_STREAM_EVENT });
+  }, { prompt: STREAM_PROMPT, partial: PARTIAL_REPLY, error: STREAM_ERROR, failureEvent: FAIL_STREAM_EVENT,
+    firstChunkEvent: FIRST_CHUNK_EVENT, delayFirstChunk });
 }
+
+test("waiting for a new reply does not relabel the previous reply as thinking", async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await holdReply(page, true);
+  await replyWith(page, [LAST_REPLY]);
+  await page.goto("/");
+  await sendMessage(page, "しおりはどこ？", LAST_REPLY);
+
+  await page.getByRole("textbox", { name: "メッセージ", exact: true }).fill(STREAM_PROMPT);
+  await page.getByRole("button", { name: "送信", exact: true }).click();
+  const caption = page.locator("#current-utterance");
+  await expect(caption).toHaveText("考え中…");
+  await expect(caption.locator("p")).toHaveCount(0);
+  await expect(page.locator("#recent-dialogue")).toContainText(LAST_REPLY);
+  await expect(page.locator("#dialogue-log .is-assistant p")).toHaveText(LAST_REPLY);
+
+  await page.evaluate(event => window.dispatchEvent(new Event(event)), FIRST_CHUNK_EVENT);
+  await expect(caption.locator("p")).toHaveText(PARTIAL_REPLY);
+  await expect(caption.locator(".scene-speaker")).toHaveText("しずく");
+  await page.evaluate(event => window.dispatchEvent(new Event(event)), FAIL_STREAM_EVENT);
+  await expect(page.locator("#dialogue-error")).toContainText(STREAM_ERROR);
+  await expect(caption.locator("p")).toHaveText(LAST_REPLY);
+  await expect(caption.locator(".scene-speaker")).toHaveText("しずく");
+});
+
+test("a completed reply stays visible while the saved-memory refresh is outstanding", async ({ page }) => {
+  const initialMemories = page.waitForResponse(response => response.url().endsWith("/api/memories"));
+  await page.goto("/");
+  await initialMemories;
+
+  let releaseRefresh = () => {};
+  const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+  let refreshOutstanding = false;
+  let savedMemoryId: string | undefined;
+  let completedReply = "";
+  await page.route("**/api/dialogue/stream", async route => {
+    const original = await route.fetch();
+    const body = await original.text();
+    const events = body.trim().split("\n").map(line => JSON.parse(line) as DialogueStreamEvent);
+    const complete = events.find(event => event.type === "complete");
+    if (!complete?.response.saved_memory) throw new Error("Expected a completed reply with an explicit saved memory");
+    savedMemoryId = complete.response.saved_memory.id;
+    completedReply = complete.response.reply;
+    await route.fulfill({ response: original, body });
+  });
+  await page.route("**/api/memories", async route => {
+    if (route.request().method() === "GET") {
+      refreshOutstanding = true;
+      await refreshGate;
+    }
+    await route.continue();
+  });
+
+  try {
+    await page.getByRole("textbox", { name: "メッセージ", exact: true })
+      .fill("覚えておいて：対話シーンE2E専用の架空設定、しおりは青");
+    await page.getByRole("button", { name: "送信", exact: true }).click();
+
+    await expect.poll(() => refreshOutstanding).toBe(true);
+    expect(completedReply).not.toBe("");
+    const caption = page.locator("#current-utterance");
+    const log = page.locator("#dialogue-log");
+    await expect(log).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByRole("button", { name: "応答を停止", exact: true })).toBeEnabled();
+    await expect(caption.locator("p")).toBeVisible();
+    await expect(caption.locator("p")).toHaveText(completedReply);
+    await expect(caption.locator(".scene-speaker")).toHaveText("しずく");
+    await expect(log.locator(".is-streaming")).toHaveCount(0);
+
+    releaseRefresh();
+    await expect(page.getByRole("button", { name: "送信", exact: true })).toBeEnabled();
+    await expect(log).toHaveAttribute("aria-busy", "false");
+    await expect(caption.locator("p")).toHaveText(completedReply);
+    await expect(caption.locator(".scene-speaker")).toHaveText("しずく");
+  } finally {
+    releaseRefresh();
+    if (savedMemoryId) {
+      const removed = await page.request.delete(`/api/memories/${savedMemoryId}`);
+      expect(removed.ok()).toBe(true);
+    }
+  }
+});
 
 test("the current reply leads the scene while the preview keeps three previous lines", async ({ page }, info) => {
   await page.setViewportSize(DESKTOP);
