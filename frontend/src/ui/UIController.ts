@@ -27,6 +27,7 @@ import { createAppMarkup, performanceEmotionLabel } from "./createAppMarkup";
 import { DialoguePresentation } from "./DialoguePresentation";
 import { icon } from "./icons";
 import { renderDeveloperPanel } from "./renderDeveloperPanel";
+import { speechStatusSummary } from "./speechStatusPresentation";
 
 export type LatencyStage = "transcription" | "first-text" | "text-complete" | "speech-start";
 
@@ -313,19 +314,21 @@ export class UIController {
       providerNote.textContent = "接続設定を確認してください";
       note.textContent = health.message;
     } else if (health.provider === "mock") {
-      badge.textContent = "Mock";
+      badge.textContent = "定型応答";
       badge.dataset["status"] = "mock";
       providerNote.textContent = "定型応答 · 外部送信なし";
       note.textContent =
-        "直近会話はRAM、明示登録した長期記憶だけは端末内SQLiteへ保存します。Mockでは外部送信しません。";
+        "Mockは定型応答で、ローカルLLMではありません。外部送信はしません。直近会話はRAM、明示登録した記憶だけを端末内のSQLiteへ保存します。";
     } else {
       badge.textContent = "OpenAI";
       badge.dataset["status"] = "online";
       providerNote.textContent = "会話をAPIへ送信";
       note.textContent =
-        "OpenAIモードでは今回の入力、会話要約、関連する長期記憶をAPIへ送信します。VRMと音声は送信しません。";
+        "OpenAIモードでは入力・直近の会話・要約・関連する長期記憶をAPIへ送信し、従量課金が発生します。VRMと録音音声は送信しません。";
     }
-    badge.title = note.textContent;
+    badge.title = health?.provider === "mock" && health.status === "ready"
+      ? "定型応答・外部送信なし"
+      : note.textContent;
 
     if (health?.session_memory_enabled) {
       this.updateDialogueMemory(this.dialogueMemoryTurns, health.session_memory_max_turns);
@@ -434,19 +437,11 @@ export class UIController {
     const message = this.required("#speech-status-message");
     const button = this.required<HTMLButtonElement>("#speech-control");
     container.dataset["speechState"] = status.state;
+    if (status.reason) container.dataset["speechReason"] = status.reason;
+    else delete container.dataset["speechReason"];
     message.textContent = status.state === "available" ? "音声出力は接続済みです。" : status.message;
     message.title = status.message;
-    const summaries: Readonly<Record<SpeechStatus["state"], string>> = {
-      checking: "音声出力を確認しています…",
-      available: "音声を利用できます",
-      generating: "音声を準備しています…",
-      playing: "読み上げ中",
-      ready: "読み上げが終わりました",
-      stopped: "読み上げを停止しました",
-      unavailable: "音声未接続・文字で会話できます",
-      error: "再生できません・文字で会話できます",
-    };
-    this.required("#speech-status-summary").textContent = summaries[status.state];
+    this.required("#speech-status-summary").textContent = speechStatusSummary(status);
     button.hidden = status.action === "none";
     button.textContent =
       status.action === "stop" ? "音声を停止" : status.action === "replay" ? "もう一度再生" : "音声待機";

@@ -6,7 +6,7 @@
 
 ![月明かりの部屋でしずくと対話する実アプリ画面。中央に現在のセリフ、右端に控えめな会話履歴](docs/assets/demo-overview.jpg)
 
-2026-11-14、PR #18反映後の実画面（1440×900）。定型応答のMockで2往復し、VOICEVOX未接続のため文字で続けている場面です。表示モデルは **AvatarSample_A © pixiv Inc. / pixiv VRoid Project**。独自制作モデルではなく、モデル本体は同梱していません。
+しずくとの対話デモ。定型応答のMockで架空の会話を3往復し、VOICEVOX:冥鳴ひまりで読み上げた実画面です。表示モデルは **AvatarSample_A © pixiv Inc. / pixiv VRoid Project**。独自制作モデルではなく、モデル本体は同梱していません。
 
 個人開発・就活ポートフォリオとして、会話の生成だけでなく、**途中で止める、音声が失敗しても続ける、保存する内容を選ぶ**ところまで実装しています。React / TypeScript・Three.js / VRM・FastAPIを使い、非同期処理と状態の境界を設計しました。
 
@@ -43,7 +43,7 @@
 
 画面刷新で音声や3Dの状態まで作り直さないよう、Reactが所有する範囲を現在のセリフ・直近履歴・全文履歴に限定しました。入力や設定は既存のDOM制御に残し、同じ表示領域を二重に管理しません。`VRMViewer`はReactの再描画で作り直さず、生成・破棄の責務を分離しています。
 
-ブラウザテストでは、対話と体験の切替で同じCanvasと各モードの下書き・履歴が保たれること、長文・生成待ち・停止・狭い画面で表示が成立することを確認します。PR #18では実VRMの目の高さからカメラ位置を決め、頭部を固定せず自然に向き合う構図へ調整しました。
+ブラウザテストでは、対話と体験の切替で同じCanvasと各モードの下書き・履歴が保たれること、長文・生成待ち・停止・狭い画面で表示が成立することを確認します。カメラは実VRMの目の高さから位置を決め、頭部を固定せず自然に向き合う構図にしています。
 
 [実装：Reactの表示境界](frontend/src/ui/DialoguePresentation.tsx) · [モード切替のテスト](frontend/e2e/experience.spec.ts) · [UI設計](docs/UI_DESIGN.md) · [カメラ・視線の比較記録](docs/evaluations/dialogue-eye-contact-2026-11-13.md)
 
@@ -146,12 +146,12 @@ OpenAI APIへの送信と従量課金が発生します。キーを `VITE_` 変�
 
 ## 評価・テスト
 
-**実装の回帰テストと、会話体験の評価を分けています。** 2026-11-14、PR #18取り込み後のmain（`94dab3d`）では、[GitHub Actionsの4ジョブが成功](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/runs/43552573386)しました。
+**実装の回帰テストと、会話体験の評価を分けています。** [GitHub Actions](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/workflows/ci.yml)でFrontend・Backend・ブラウザ・秘密情報の4項目を継続的に確認しています。
 
 | 確認 | 結果・範囲 |
 | --- | --- |
-| Vitest / Pytest | Frontend 212件、Backend 193件。状態遷移、ストリーミング、停止、音声、記憶など |
-| Playwright | 47件。Mockでの対話・体験切替、下書き、設定、失敗復帰、PC / 狭い画面 |
+| Vitest / Pytest | 状態遷移、ストリーミング、停止、音声、記憶など |
+| Playwright | Mockでの対話・体験切替、下書き、設定、失敗復帰、PC / 狭い画面 |
 | 静的検査・ビルド | 型検査、ESLint、Ruff、pip check、Viteビルドが成功 |
 | 秘密情報・依存 | Gitleaks成功。11/14の実行依存監査はnpm `--omit=dev`・Backendとも検出0件。ただし開発依存を含むnpm監査には14件（high 3 / moderate 11）が残る |
 

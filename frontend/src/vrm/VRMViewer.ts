@@ -72,9 +72,9 @@ export class VRMViewer {
   private readonly frameRate = new FrameRateMeter();
   private readonly placeholder = new Group();
   private readonly lookAtTarget = new Object3D();
-  private readonly ambientLight = new AmbientLight(new Color("#eef1ff"), 1.55);
-  private readonly keyLight = new DirectionalLight(new Color("#fffdfb"), 2.7);
-  private readonly rimLight = new DirectionalLight(new Color("#9da9eb"), 1.3);
+  private readonly ambientLight = new AmbientLight(new Color("#eef1ff"), 1.15);
+  private readonly keyLight = new DirectionalLight(new Color("#fffdfb"), 2.15);
+  private readonly rimLight = new DirectionalLight(new Color("#9da9eb"), 1.1);
   private readonly controller: CharacterController;
   private readonly idleMotion = new IdleMotionController();
   private readonly gazeMotion = new GazeMotionController();
@@ -211,9 +211,10 @@ export class VRMViewer {
 
   public setCompanionFraming(enabled: boolean): void {
     this.companionFraming = enabled;
-    this.ambientLight.intensity = enabled ? 2.35 : 1.55;
-    this.keyLight.intensity = enabled ? 4.25 : 2.7;
-    this.rimLight.intensity = enabled ? 2.25 : 1.3;
+    this.ambientLight.intensity = enabled ? 2.35 : 1.15;
+    this.keyLight.intensity = enabled ? 4.25 : 2.15;
+    this.rimLight.intensity = enabled ? 2.25 : 1.1;
+    this.renderer.toneMappingExposure = enabled ? 1.05 : 1.0;
     this.applyFraming();
   }
 
@@ -265,7 +266,7 @@ export class VRMViewer {
       renderer.setClearColor(0xffffff, 0);
       renderer.outputColorSpace = SRGBColorSpace;
       renderer.toneMapping = ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      renderer.toneMappingExposure = 1.0;
       renderer.shadowMap.enabled = true;
       renderer.domElement.className = "character-canvas";
       renderer.domElement.setAttribute("aria-label", "VRMキャラクター表示領域");

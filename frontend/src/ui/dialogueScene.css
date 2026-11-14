@@ -132,6 +132,7 @@
 #dialogue-workspace .stage-settings-button,
 #dialogue-workspace #history-open,
 #dialogue-workspace #conversation-reset {
+  position: relative;
   display: inline-flex;
   min-width: 44px;
   min-height: 44px;
@@ -154,6 +155,35 @@
   display: none;
 }
 
+/* Hover uses native titles; keyboard focus shows the same short accessible name. */
+#dialogue-workspace :where(.stage-settings-button, #history-open, #conversation-reset)::after {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 8px);
+  right: 0;
+  display: none;
+  width: max-content;
+  padding: 5px 9px;
+  border-radius: 4px;
+  color: #24344e;
+  background: #f4f6fc;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  content: attr(aria-label);
+}
+
+#dialogue-workspace :is(.stage-settings-button, #history-open, #conversation-reset):focus-visible::after {
+  display: block;
+}
+
+#dialogue-workspace .stage-settings-button::after {
+  right: auto;
+  left: 0;
+}
+
 #dialogue-workspace > .control-panel {
   z-index: 1;
   pointer-events: none;
@@ -174,7 +204,7 @@
   position: absolute;
   z-index: 1;
   right: 0;
-  bottom: 8px;
+  bottom: 16px;
   left: 0;
   width: var(--scene-column);
   margin-inline: auto;
@@ -295,17 +325,30 @@
   pointer-events: auto;
 }
 
+#dialogue-workspace .composer-surface {
+  border: 1px solid #b2bdd1;
+  border-radius: 7px;
+  background: rgb(251 251 254 / 98%);
+  box-shadow: 0 6px 20px rgb(19 27 42 / 18%);
+}
+
+#dialogue-workspace .composer-surface:focus-within {
+  border-color: #94a9d4;
+  box-shadow: 0 0 0 2px #a4b5d9, 0 6px 20px rgb(19 27 42 / 18%);
+}
+
 #dialogue-workspace .composer-tools {
-  min-height: 0;
+  min-height: 44px;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin-bottom: 5px;
+  margin: 0;
+  padding: 0 5px;
 }
 
 #dialogue-workspace .response-style-control,
 #dialogue-workspace .speech-control {
   color: #243651;
-  background: rgb(246 248 254 / 95%);
+  background: transparent;
   border-radius: 5px;
 }
 
@@ -314,22 +357,26 @@
 }
 
 #dialogue-workspace .response-style-control select {
-  min-height: 38px;
+  min-height: 44px;
   background: transparent;
 }
 
+#dialogue-workspace .speech-control {
+  min-height: 44px;
+}
+
 #dialogue-workspace .dialogue-form {
+  min-width: 0;
   gap: 6px;
-  padding: 5px;
-  border: 1px solid #b2bdd1;
-  border-radius: 7px;
-  background: rgb(251 251 254 / 98%);
-  box-shadow: 0 6px 20px rgb(19 27 42 / 18%);
+  padding: 0 5px 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 #dialogue-workspace .dialogue-form:focus-within {
-  border-color: #94a9d4;
-  box-shadow: 0 0 0 2px #a4b5d9, 0 6px 20px rgb(19 27 42 / 18%);
+  box-shadow: none;
 }
 
 #dialogue-workspace .dialogue-input {
@@ -362,14 +409,34 @@
   font-size: 13px;
 }
 
-#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]):has(+ .speech-status:is([data-speech-state="error"], [data-speech-state="unavailable"])) {
+#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]):has(+ .speech-status[data-speech-state="error"]) {
   border-radius: 4px 4px 0 0;
 }
 
-#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]) + .speech-status:is([data-speech-state="error"], [data-speech-state="unavailable"]) {
+#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]) + .speech-status[data-speech-state="error"] {
   margin-top: 0;
   border-top: 1px solid #ede1c9;
   border-radius: 0 0 4px 4px;
+}
+
+#dialogue-workspace .speech-status[data-speech-state="unavailable"] {
+  width: fit-content;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-left: auto;
+  padding: 0 4px;
+  color: #34445b;
+  background: transparent;
+}
+
+#dialogue-workspace .speech-status[data-speech-state="unavailable"] .speech-status-dot {
+  display: none;
+}
+
+#dialogue-workspace .speech-status[data-speech-reason="autoplay-blocked"] {
+  display: grid;
+  color: var(--amber);
+  background: #fbf7ed;
 }
 
 #dialogue-workspace .connection-status {
@@ -490,7 +557,7 @@
   }
 
   #dialogue-workspace .scene-utterance {
-    bottom: 6px;
+    bottom: 14px;
     padding: 10px 13px 12px;
   }
 
@@ -504,6 +571,10 @@
 
   #dialogue-workspace .composer {
     padding-bottom: max(9px, env(safe-area-inset-bottom));
+  }
+
+  #dialogue-workspace .speech-status[data-speech-state="unavailable"] {
+    background: rgb(252 249 241 / 72%);
   }
 
   #history-dialog {
