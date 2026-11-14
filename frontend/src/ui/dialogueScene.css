@@ -132,6 +132,7 @@
 #dialogue-workspace .stage-settings-button,
 #dialogue-workspace #history-open,
 #dialogue-workspace #conversation-reset {
+  position: relative;
   display: inline-flex;
   min-width: 44px;
   min-height: 44px;
@@ -152,6 +153,35 @@
 
 #dialogue-workspace .stage-settings-button span {
   display: none;
+}
+
+/* Hover uses native titles; keyboard focus shows the same short accessible name. */
+#dialogue-workspace :where(.stage-settings-button, #history-open, #conversation-reset)::after {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 8px);
+  right: 0;
+  display: none;
+  width: max-content;
+  padding: 5px 9px;
+  border-radius: 4px;
+  color: #24344e;
+  background: #f4f6fc;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  content: attr(aria-label);
+}
+
+#dialogue-workspace :is(.stage-settings-button, #history-open, #conversation-reset):focus-visible::after {
+  display: block;
+}
+
+#dialogue-workspace .stage-settings-button::after {
+  right: auto;
+  left: 0;
 }
 
 #dialogue-workspace > .control-panel {
@@ -362,14 +392,34 @@
   font-size: 13px;
 }
 
-#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]):has(+ .speech-status:is([data-speech-state="error"], [data-speech-state="unavailable"])) {
+#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]):has(+ .speech-status[data-speech-state="error"]) {
   border-radius: 4px 4px 0 0;
 }
 
-#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]) + .speech-status:is([data-speech-state="error"], [data-speech-state="unavailable"]) {
+#dialogue-workspace .voice-input-status:is([data-voice-input-state="error"], [data-voice-input-state="unavailable"]) + .speech-status[data-speech-state="error"] {
   margin-top: 0;
   border-top: 1px solid #ede1c9;
   border-radius: 0 0 4px 4px;
+}
+
+#dialogue-workspace .speech-status[data-speech-state="unavailable"] {
+  width: fit-content;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-left: auto;
+  padding: 0 4px;
+  color: #34445b;
+  background: transparent;
+}
+
+#dialogue-workspace .speech-status[data-speech-state="unavailable"] .speech-status-dot {
+  display: none;
+}
+
+#dialogue-workspace .speech-status[data-speech-reason="autoplay-blocked"] {
+  display: grid;
+  color: var(--amber);
+  background: #fbf7ed;
 }
 
 #dialogue-workspace .connection-status {

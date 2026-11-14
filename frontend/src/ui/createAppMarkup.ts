@@ -77,7 +77,7 @@ export function createAppMarkup(): string {
               <strong id="performance-emotion">自然</strong>
               <small id="performance-detail"></small>
             </div>
-            <button class="quiet-button stage-settings-button" type="button" data-settings-target="character" aria-label="キャラクターを調整" aria-haspopup="dialog">
+            <button class="quiet-button stage-settings-button" type="button" data-settings-target="character" aria-label="キャラクターを調整" title="キャラクターを調整" aria-haspopup="dialog">
               ${icon("sliders")}<span>表示を調整</span>
             </button>
           </div>
