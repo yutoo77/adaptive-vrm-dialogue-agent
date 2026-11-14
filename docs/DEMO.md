@@ -1,110 +1,112 @@
-# Demo Guide
+# デモガイド
 
-This guide provides a repeatable three-minute demonstration and a one-minute short version. Use the default Mock Provider so the demo has no API charge and does not send dialogue text to an external AI service.
+更新日: 2026-11-14 / PR #18取り込み後の画面
 
-## Before the demo
+初めて見る人に、しずくとの対話、音声から文字への切り替え、保存する記憶の選択を見せる手順。基本は3分、短縮版は1分を想定する。これは実演用の手順であり、3〜5分の自然な対話を利用者評価で合格とした記録ではない。
 
-1. Complete `./setup.ps1` and start VOICEVOX if voice output is required.
-2. Put a permitted VRM at `frontend/public/models/private/character.vrm`, or prepare it for selection in the browser.
-3. Run `./start_demo.ps1` and confirm `月白 しずく`, the `Mock` provider badge, response style `自然に`, and the Avatar or VRM picker. Mock uses fixed test replies. The model name and Character Profile version are under `キャラクターを調整 → 診断情報`.
-4. If voice output is part of the demo, open `設定 → 音声`, then close settings, send one short message, and confirm that VOICEVOX plays it. The short failure message opens the full details; a healthy idle state is not repeated on the main screen.
-5. Do not show API keys, local files, terminal logs, microphone device names, or private long-term memory in a recording.
+既定の **Mockは定型応答**。APIキーや外部AIへの送信なしで操作を再現できるが、自由な質問に答えるローカルLLMではない。実LLMを見せる場合だけ、[README](../README.md)の手順でOpenAIへ明示的に切り替える。料金と外部送信が発生するため、録画でも接続先を隠さない。
 
-## Three-minute route
+## 実演前の準備
 
-### 1. Problem and design — 30 seconds
+1. [起動手順](../README.md#quick-start)に従って、リポジトリ直下で `.\setup.ps1`、`.\start_demo.ps1` を実行する。音声出力を使う場合は先にVOICEVOXを起動する。
+2. 利用条件を確認したVRMを `frontend/public/models/private/character.vrm` に置くか、画面の「VRMファイルを選ぶ」から読み込む。配布モデルは同梱していない。
+3. ブラウザで `http://127.0.0.1:5173/` を開き、「月白 しずく」、接続先の「Mock」、入力欄の「話し方 / ふつう」を確認する。モデルがなければ代替の3D表示で続けられる。
+4. 音声を使うなら「設定 → 音声」で声を選び、「声を試す」で再生を確認する。設定を閉じ、短いメッセージへの返答も一度確かめる。
+5. 公開する画面にはAPIキー、端末のファイル一覧、個人的な会話・記憶、マイクの機器名を映さない。使用モデルと声のクレジットは[第三者利用条件](../THIRD_PARTY_NOTICES.md)を確認する。
 
-Explain that the goal is not to place unrelated AI features on one screen. The application connects a dialogue result to understandable status, voice, facial expression, gesture, and recoverable fallbacks while keeping the default path local and free.
+音声入力を使う場合は、認識モデルのダウンロードを事前に済ませる。その後 `.\start_demo.ps1 -PrepareVoiceInput` で、キャッシュ済みモデルをBackendへ先に読み込める。このオプションは録音もダウンロードもせず、失敗してもテキストで起動できる。CPUでの認識処理や無音を待つ時間は残る。[事前読込の記録](evaluations/transcription-preparation-2026-09-13.md)・[遅延の計測](evaluations/transcription-latency-2026-09-13.md)
 
-### 2. Text-to-performance vertical slice — 60 seconds
+## 3分で見せる流れ
 
-Send `何ができるの？`.
+### 1. 何を作ったか — 20秒
 
-Point out that the header name, version, short message label, voice defaults, and performance limits come from the same versioned Character Profile. The current VRM is still a separately licensed sample, so do not describe the original Avatar as complete.
+「しずくと音声・文字で話せる、個人用のVRMアプリです。会話の返答を声・表情・口の動きへつなぎ、音声が使えないときも文字で続けられます」と紹介する。現在表示しているのがMockなら、定型応答による動作デモだと最初に伝える。
 
-Show the flow:
+### 2. 会話とキャラクターの反応 — 60秒
 
-1. the Avatar enters `thinking`;
-2. reply text appears incrementally through the typed NDJSON stream;
-3. the final schema validates before the response is committed and the selected expression and gesture take effect;
-4. VOICEVOX begins from the first closed sentence while later text is still arriving;
-5. the mouth follows the five-vowel timeline and the Avatar returns to a weakened emotional baseline, or `idle` when the result is neutral.
+`何ができるの？` と入力して送信する。
 
-Mention that arbitrary bone names and scripts are not accepted. The plan is limited by a validated schema.
+- 返答を待つ間は「考え中…」、受信中は文章が少しずつ表示される。
+- 最終応答を検証してから、確定した返答と表情・しぐさへ反映する。
+- VOICEVOXが使える場合は、文が区切れたところから先行合成する。後続の本文を受信中でも再生を始められるが、短い返答や処理速度によっては差が見えない。
+- 音声の時刻に合わせて5母音の口形を動かす。全音素の正確な口形再現ではない。
 
-Change `返答` from `自然に` to `詳しく` and send the same prompt again. Explain that the user explicitly controls response length; the application does not infer skill or a hidden psychological profile from voice or text. The four allowed values are validated in the browser and backend, and the selection is not persisted after reload.
+「話し方」を「ふつう」から「詳しく」へ変え、同じ質問を送る。選べるのは「短め・ふつう・詳しく・やさしく」。利用者の能力を推測せず、本人の選択を次の返答へ伝えている。選択は再読込すると初期値へ戻る。
 
-Open the history button at the top right to read the retained conversation. A clipped reply also has a `全文を読む` button, which opens at the start of that reply.
+右上の履歴ボタンから会話を読む。通常画面の右端は直近3件だけで、ユーザーは右寄せ、しずくは左寄せ。スマートフォン幅ではこの表示を省き、履歴ボタンから開く。長い返答はセリフ欄の「全文を読む」で確認できる。
 
-Optional continuity check: send `今日は疲れた` and then a neutral follow-up such as `そうなんだ`. Watch for a weakened gentle expression, gaze, and breathing across the follow-up. Then send `少し気持ちが軽くなった` and check the change in expression. This state remains in RAM for at most two turns and is cleared by `新しい会話`.
+表示中のVRMはキャラクターの口調設定とは別の素材。サンプルモデルを使っている場合、自作モデルとは紹介しない。モデルとキャラクター定義のバージョンは「設定 → キャラクター → 診断情報」で確認できる。
 
-If a response remains in `thinking`, the send button changes to `応答を停止`. Stopping returns the Avatar to `idle` without adding an assistant message or saving that turn to session or long-term memory. The default Mock is intentionally fast, so use the automated browser scenario and the cancellation evaluation record as repeatable evidence instead of adding an artificial production delay only for the live demo.
+### 3. 音声入力と修正 — 40秒
 
-### 3. Voice input and fallback — 40 seconds
+マイクを押して短く話し、無音で録音が止まるのを待つ。認識結果は自動送信されず、入力欄へ戻る。誤認識があれば文字を直してから送信する。権限の拒否や認識失敗があっても、文字入力を使えることを見せる。
 
-Press the microphone button, say a short phrase, and let silence stop the recording. Show that the recognized text returns to the input box instead of being sent automatically. This gives the user a chance to correct a recognition error.
+任意の確認として、先に `今日は` と入力してから録音する。認識結果は既存の下書きを上書きせず、改行して追加される。認識中の編集も残す。入力上限を超えた下書きは送信前に短くする必要がある。タブを離れると、IME変換待ちの認識結果は破棄する。[下書き保持の自動検証と実機IMEの未確認点](evaluations/voice-draft-preservation-2026-09-13.md)
 
-Optional draft check: type `今日は` before recording. The recognized text should appear on a new line after it, not replace it. In `体験`, edits made while recognition is running are also retained. Text over the input limit remains intact; attempting to send asks for a shorter message. Clear the draft first if the intention is to replace it by recording again. IME-pending results are discarded when leaving a tab. See the [automated draft checks and native IME limitation](evaluations/voice-draft-preservation-2026-09-13.md).
+### 4. 覚える内容を選ぶ — 40秒
 
-Before a voice demo, optionally run `.\start_demo.ps1 -PrepareVoiceInput` from the repository root. It loads only the cached recognition model into the running Backend, without recording or downloading; failure leaves Text available. This moves model loading earlier, not the remaining CPU inference or silence-detection delay. See the [measured limits](evaluations/transcription-latency-2026-09-13.md).
+架空の例として `覚えておいて：好きな色は青` を送信し、「設定 → 記憶」で確認する。明示登録した内容だけがSQLiteへ保存され、編集・削除できる。
 
-If microphone permission or transcription fails, show that Text input remains available.
+通常会話はRAM内で管理し、「新しい会話」で短期履歴と短期感情を消す。保存した長期記憶は別なので、この操作では消えない。実演後は追加した架空の記憶を削除する。設定を閉じても入力中の下書きは残る。
 
-### 4. Memory and user control — 30 seconds
+### 5. 根拠と限界 — 20秒
 
-Send `覚えておいて：好きな色は青`, then open `設定 → 記憶`. Show that only explicit content is persisted, it can be edited or deleted, and a new conversation clears the RAM session separately. Closing settings preserves the draft and returns keyboard focus to the opening button.
+READMEから設計資料・評価記録・CIを開く。自動テストは状態遷移や失敗時の復帰を検証するもので、会話の自然さを保証しない。音声認識の遅延・雑音への弱さ、声の読み間違い、別モデルでの見え方には確認課題が残ることを伝える。
 
-Do not store sensitive or real personal information in a public demo.
+## 停止と声の調整を詳しく見せる場合
 
-### 5. Evidence and limits — 20 seconds
+**応答の停止:** 生成中は送信ボタンが「応答を停止」へ変わる。Backendが停止を受け付けた場合、途中の返答と未再生の音声を破棄し、その往復をRAM履歴や長期記憶へ保存しない。既に保存開始へ進んだ場合は停止不成立として知らせる。通信が失敗した場合も停止成功とは扱わない。先に聞こえた音声や、発生済みのAPI料金は取り消せない。
 
-Close with the test and evaluation evidence, then state the limitations: no Internet deployment, no semantic vector search, one Code-defined Character Profile, no original VRM yet, fixed Japanese emotion markers and a two-turn heuristic rather than broad or user-rated naturalness, already-played provisional speech cannot be retracted, no upstream cancellation or billing guarantee, and no guarantee of transcription quality in noisy environments.
+Mockは短時間で返すため、実演で停止を押せるとは限らない。見せるためだけに遅延を追加せず、[停止境界の設計](../ARCHITECTURE.md)と自動テストを根拠にする。
 
-For the separate cooperative experience, use the route below; do not replace or reset the ordinary dialogue demo.
+**声の調整:** 「設定 → 音声」で「声」「速さ」「高さ」「抑揚」を変え、「声を試す」で固定文を再生する。下書きと会話は変わらない。次の発話から適用され、始まった返答は途中で設定を切り替えない。設定はこのブラウザに保存され、「しずくの標準に戻す」で戻せる。公開する音声には選択した声のクレジットが必要。[検証記録](evaluations/voice-settings-2026-09-06.md)
 
-## Cooperative experience — 月待ちの便り
+**感情の継続:** `今日は疲れた`、`そうなんだ`、`少し気持ちが軽くなった` を順に試す。穏やかな表情の余韻と、明示された状態変化への反応を確認する。短期感情はRAM内で最大2ターン減衰させる限定的な処理であり、心理状態全般を理解する機能ではない。
 
-1. Leave an unsent draft in `対話`, then choose `体験 → 書斎に入る`.
-2. Inspect the window, letter and box. Shizuku reads both necessary conditions from the letter; hints are optional help, not required information.
-3. Select each moon bookmark and a slot, then press `この並びで開ける`. Try a wrong arrangement to show that the board stays intact and no penalty is applied.
-4. With full in the middle and the other two reversed, ask for a hint: Shizuku acknowledges the middle and points to the ordering clue. `もう少しヒント` gives a more concrete observation. `答えを見る` opens a confirmation; Escape or `まだ考える` preserves the board, history and hint level. The confirmed third hint reveals the sequence without unlocking anything. These operations make no LLM calls. Free consultation is scripted in Mock (also board-aware after reading the letter); OpenAI uses the configured paid API and only experience-local context.
-5. Solve and read the quiet ending. Switch back to `対話` and confirm the draft and history remain. Returning to `体験` retains progress without automatically replaying old speech.
+## 別タブの協力体験「月待ちの便り」
 
-The solution is left-to-right **half / full / crescent** after inspecting the letter. This is an introductory ordering puzzle, not a claim of a difficult escape game or autonomous Tool-calling Agent. Do not reveal the solution before the user tries it.
+通常対話と分けて紹介する、小さな並べ替えの謎解き。
 
-Voice, VRM and the installed voice preferences are reused. With no VOICEVOX or VRM, use text and the placeholder. Progress is volatile: reload starts a fresh page; backend restart or idle expiry requires a new experience. A transport failure requires a state refresh rather than blindly resending a move. Restart asks for confirmation and affects only the experience.
+1. 「対話」に下書きを残してから「体験 → 書斎に入る」を選ぶ。
+2. 窓・手紙・箱を調べる。必要な条件は手紙にあり、ヒントを使わなくても解ける。
+3. 月の栞と置き場所を選び、「この並びで開ける」を押す。間違えても配置は保持され、罰則はない。
+4. 「ヒントを聞く」「もう少しヒント」で段階的に手掛かりを得る。「答えを見る」は確認を挟み、Escapeや「まだ考える」なら配置・履歴・ヒント段階を変えない。答えを見ただけでは箱は開かない。
+5. 解いたら「対話」に戻り、下書きと履歴が残っていることを確認する。「体験」へ戻っても進行を保ち、過去の音声を自動再生しない。
 
-Owner acceptance remains separate from automated checks: does Shizuku feel calm, is the next action discoverable, and does the collaboration feel worthwhile? Real microphone accuracy and naturalness of all possible AI answers are not certified by the puzzle tests.
+<details>
+<summary>実演者向けの答え</summary>
 
-## One-minute dialogue route
+手紙を調べた後、左から **半月・満月・三日月**。満月を中央にし、左右だけ逆に置くと、正しい部分を認めるヒントも確認できる。利用者が試す前には開かない。
 
-1. State the problem and local-first policy in 10 seconds.
-2. Send `何ができるの？`, switch from `自然` to `詳しく`, and show Text, VOICEVOX, expression, gesture, and lip sync in 30 seconds.
-3. Show the explicit-memory controls and automated test counts in 15 seconds.
-4. State one measured limitation and the next improvement in 5 seconds.
+</details>
 
-## Recovery during a live demo
+探索・配置・正誤判定・ヒントはルールベースで、LLMを呼ばない。自由相談はMockでは定型応答、OpenAI設定時だけ従量課金APIを使う。送信するのは今回の相談と体験内の文脈で、通常対話や長期記憶は混ぜない。自律的なAgentやTool Callingの実装例ではない。
 
-Before describing response speed, distinguish first text (`初字`), completed text (`本文`), and browser playback start (`発話`) in `設定 → 音声 → 診断情報`. These dialogue metrics start at send; they exclude microphone recognition and manual draft confirmation. The [tempo evaluation](evaluations/conversation-tempo-2026-09-05.md) reports a local connection optimization, not a completed natural-conversation performance gate.
+音声・VRM・声の設定は通常対話と共通。使えなければテキストと代替表示で進める。進行は永続保存せず、ページ再読込で初期化される。Backend再起動や期限切れでは新しい体験が必要。通信失敗時は移動操作を無条件に再送せず状態を確認する。「最初から」は確認後、体験だけをリセットする。
 
-The [rendering follow-up](evaluations/rendering-tempo-2026-09-06.md) measures real VRM and local speech with GPU-backed Chromium, but Mock replies. Do not present the faster test-browser numbers as an app-wide speedup or real-LLM conversational latency. Ordinary headless operation tests deliberately remain separate from hardware-dependent tempo evaluation.
+## 1分に短縮する場合
 
-The [real-API follow-up](evaluations/real-api-tempo-2026-09-06.md) verifies three Backend-only Text/performance responses. It does not include browser playback. The 3–5 minute natural-conversation demo is still an acceptance target, not a completed test.
+1. 10秒: 何を作ったかと、Mock／OpenAIのどちらを使っているかを伝える。
+2. 30秒: 短く話しかけ、文字・音声・表情・口形を見せる。「話し方」を「詳しく」へ変更する。
+3. 15秒: 「設定 → 記憶」とREADMEの設計・評価へのリンクを示す。
+4. 5秒: 確認できた範囲と、残る課題を一つずつ伝える。
 
-Profile v1.1.0 has [a separate conversation-style evaluation](evaluations/conversation-style-2026-09-06.md): nine before/after cases and two identity refinements, without audio. For the next owner-approved OpenAI session, compare a short introduction, an ordinary explanation, good news, and a request to just listen. Check whether the words, voice and expression fit together; do not expect a gesture on every reply. Keep these live-model checks separate from the default free Mock demo and deterministic browser fixtures.
+## 実演中の復帰手順
 
-| Problem | Recovery |
+| 状況 | 対応 |
 | --- | --- |
-| VRM is missing | Continue with the 3D placeholder, then select a permitted `.vrm` file. |
-| VOICEVOX is unavailable | Continue the Text conversation; start VOICEVOX and reload for voice output. |
-| Microphone is denied or silent | Use Text input. The app does not require Voice to continue. |
-| Voice-input connection check fails | Use the reconnect control in place of the microphone. Drafts and puzzle progress remain; reconnect does not record. A later microphone press starts recording. |
-| Previous transcription is still computing | Wait briefly and record again, or continue by Text. Cancelling the UI does not forcibly interrupt local inference. The app refuses another queued job and does not resend audio automatically. |
-| Backend is offline | Keep the VRM viewer open, restart `start_demo.ps1`, then retry. |
-| Port 8000 or 5173 belongs to another app | Stop that app or identify its PID; the launcher will not kill an unknown process. |
-| Browser blocks autoplay | Use the replay button for the generated audio. |
-| A response takes too long | Press the same button, now labelled `応答を停止`; wait for the idle notice before sending again. |
+| VRMがない | 代替の3D表示で続ける。利用条件を確認した `.vrm` を選ぶ。 |
+| VOICEVOXが使えない | テキストで続ける。エンジンを起動後、「設定 → 音声 → 再接続」で声の一覧を再取得し、「声を試す」で復帰を確認する。ページ再読込は不要で、下書き・会話・体験進行を保てる。 |
+| マイクを拒否した・無音だった | テキスト入力へ戻る。音声は必須ではない。 |
+| 音声入力の接続確認に失敗 | マイク位置の再接続ボタンを押す。下書きと体験の進行は残り、再接続自体では録音しない。 |
+| 前の音声認識が処理中 | 少し待って録り直すか、文字で続ける。UIで取り消してもCPU推論は即時停止せず、追加の認識要求は待ち行列に入れない。音声も自動再送しない。 |
+| Backendが停止した | 起動ターミナルを確認し、`.\start_demo.ps1` で再起動して再試行する。 |
+| ポート8000／5173が使用中 | 使用しているアプリを確認してから終了する。起動スクリプトは無関係なプロセスを強制終了しない。 |
+| 自動再生をブラウザが拒否 | 「もう一度再生」を押す。 |
+| 応答が長く終わらない | 「応答を停止」を押し、成立・失敗の案内を確認してから次を送る。 |
 
-Voice preferences: in `設定 → 音声`, choose an installed speaking voice and adjust `速さ`, `高さ`, or `抑揚`. Use `声を試す` to hear a fixed local sentence, then stop it. Verify the draft and conversation remain unchanged. A new reply uses the selected settings; an already-started reply retains its original settings. Reload to verify persistence, and use `しずくの標準に戻す` to reset. Confirm the selected voice's credit before publishing audio. Details: [voice settings evaluation](evaluations/voice-settings-2026-09-06.md).
+速度を説明するときは「設定 → キャラクター → 診断情報」の **認識・初字・本文・発話** を分ける。初字・本文・発話は送信後の時間で、録音・認識・下書き確認を含む会話全体の時間ではない。
 
-Evaluation details and failure cases are stored under [docs/evaluations](evaluations/).
+過去の計測も条件を区別する。[描画・音声の計測](evaluations/rendering-tempo-2026-09-06.md)は実VRM・実VOICEVOXを使う一方、返答はMock。[実APIの3件](evaluations/real-api-tempo-2026-09-06.md)と[口調の比較](evaluations/conversation-style-2026-09-06.md)はBackendの本文・演技出力を調べたもので、ブラウザの再生や聴取評価ではない。
+
+実マイクの精度、声と表情の自然さ、次の操作の分かりやすさは、人が実演して確認する。[評価記録一覧](evaluations/)
