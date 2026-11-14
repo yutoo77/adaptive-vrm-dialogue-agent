@@ -204,7 +204,7 @@
   position: absolute;
   z-index: 1;
   right: 0;
-  bottom: 8px;
+  bottom: 16px;
   left: 0;
   width: var(--scene-column);
   margin-inline: auto;
@@ -557,7 +557,7 @@
   }
 
   #dialogue-workspace .scene-utterance {
-    bottom: 6px;
+    bottom: 14px;
     padding: 10px 13px 12px;
   }
 

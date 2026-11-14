@@ -57,6 +57,12 @@ async function expectComposerLayout(page: Page, originalInputWidth: number): Pro
   expect(formBox).not.toBeNull();
   expect(toolsBox!.y + toolsBox!.height).toBeLessThanOrEqual(formBox!.y + 1);
 
+  const separation = await surface.evaluate(element => {
+    const utterance = document.querySelector(".scene-utterance")!;
+    return element.getBoundingClientRect().top - utterance.getBoundingClientRect().bottom;
+  });
+  expect(separation).toBeCloseTo(page.viewportSize()!.width <= 760 ? 14 : 16, 1);
+
   for (const selector of ["#response-style-select", "#speech-control", "#voice-input-control", "#dialogue-submit"]) {
     const control = page.locator(selector);
     await expect(control).toBeVisible();
