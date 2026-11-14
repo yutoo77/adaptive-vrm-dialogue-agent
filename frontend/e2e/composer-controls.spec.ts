@@ -166,6 +166,8 @@ test("generation disables style and speech controls but keeps cancellation and r
 
 for (const viewport of VIEWPORTS) {
   test(`settings and modes preserve the draft and style, and replay or stop never sends it at ${viewport.width}px`, async ({ page }) => {
+    // Multiple native playback cycles and mode changes need a larger total budget; individual waits stay unchanged.
+    test.setTimeout(90_000);
     await page.route("**/api/speech", route => route.fulfill({ contentType: "audio/wav", body: silentWav(2000) }));
     const messages = observeMessages(page);
     await page.setViewportSize(viewport);
