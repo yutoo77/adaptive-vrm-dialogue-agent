@@ -73,6 +73,28 @@ test("a synthesis attempt that fails remains a visible warning on a narrow scree
   await expect(page.getByRole("textbox", { name: "メッセージ", exact: true })).toBeEnabled();
 });
 
+test("mobile missing-speech detail has a small readable backing without changing the desktop", async ({ page }) => {
+  await speechHealth(page, "unavailable");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const status = page.locator("#speech-status");
+  await expect(status).toHaveAttribute("data-speech-state", "unavailable");
+  await expect(status).toHaveCSS("background-color", "rgba(252, 249, 241, 0.72)");
+  await expect(page.locator("#speech-status-summary")).toHaveCSS("font-size", "13px");
+  await expect(status.locator(".speech-status-dot")).toBeHidden();
+  const box = await status.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeLessThan(160);
+  expect(box!.height).toBeLessThanOrEqual(36);
+  await expect(status).toBeInViewport();
+  await page.getByRole("button", { name: "音声出力の詳細", exact: true }).click();
+  await expect(page.locator("#speech-status-message")).toHaveText(CONNECTION_DETAIL);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "音声出力の詳細", exact: true })).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(status).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+});
+
 test("blocked autoplay stays visible, manual replay works, and completion is quiet", async ({ page }) => {
   await speechHealth(page, "ready");
   await page.addInitScript(() => {

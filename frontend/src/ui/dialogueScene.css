@@ -556,6 +556,10 @@
     padding-bottom: max(9px, env(safe-area-inset-bottom));
   }
 
+  #dialogue-workspace .speech-status[data-speech-state="unavailable"] {
+    background: rgb(252 249 241 / 72%);
+  }
+
   #history-dialog {
     max-height: 84dvh;
   }

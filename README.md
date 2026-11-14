@@ -6,7 +6,7 @@
 
 ![月明かりの部屋でしずくと対話する実アプリ画面。中央に現在のセリフ、右端に控えめな会話履歴](docs/assets/demo-overview.jpg)
 
-2026-11-14、PR #18反映後の実画面（1440×900）。定型応答のMockで2往復し、VOICEVOX未接続のため文字で続けている場面です。表示モデルは **AvatarSample_A © pixiv Inc. / pixiv VRoid Project**。独自制作モデルではなく、モデル本体は同梱していません。
+2026-11-14、PR #20の実画面（1440×900）。架空のMock会話を3往復し、VOICEVOX:冥鳴ひまりで合成・ブラウザ再生完了を確認した後の場面です。[撮影時の確認範囲](docs/evaluations/dialogue-ui-polish-2026-11-14.md#追補スマホの可読性とreadme画像)。表示モデルは **AvatarSample_A © pixiv Inc. / pixiv VRoid Project**。独自制作モデルではなく、モデル本体は同梱していません。
 
 個人開発・就活ポートフォリオとして、会話の生成だけでなく、**途中で止める、音声が失敗しても続ける、保存する内容を選ぶ**ところまで実装しています。React / TypeScript・Three.js / VRM・FastAPIを使い、非同期処理と状態の境界を設計しました。
 
