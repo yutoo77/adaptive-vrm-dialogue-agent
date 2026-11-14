@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新日: 2026-11-13
+更新日: 2026-11-14
 
 このRoadmapは機能数ではなく、各Vertical Sliceが「動く・復帰できる・評価できる・説明できる」状態になったかで進行を判断する。
 
@@ -11,6 +11,14 @@
 今後の主要開発は、このVisionを構成する能力を一つずつ完成させる。同時に複数の主要機能を進めず、既定Mock、Text fallback、利用者による保存・外部送信の制御を壊さない。
 
 ## 現在のRelease目標
+
+PR #17とPR #18はmainへ統合済み。会話表示のReact化、月明かりの部屋、目の高さに合わせた通常対話のカメラ、カメラを基準にした視線、話者を配置で区別する直近履歴が現在の画面である。次の確認対象は実マイクでの待ち時間・誤認識と、本人による会話・聴取の自然さ。自動テストや画面比較の成功とは分けて扱う。
+
+以下の日付付き項目は、その時点の実装・判断の経過である。「次のGate」や「優先対象」は記録当時の予定を指す。
+
+2026-11-14の依存監査では、npmの実行依存（`--omit=dev`）とBackendは検出0件だが、開発依存を含めるとnpmに14件（high 3 / moderate 11）が残る。通常起動で使うViteも対象に含まれる。過去の「監査0件」と区別し、依存更新と回帰確認を次の保守課題とする。
+
+### 実装・判断の経過
 
 11月13日・対話画面刷新。月明かりの部屋に大きなVRM、現在のセリフ、右端の短い履歴を配置。Reactがセリフと履歴を描画し、既存の入力・音声・VRM・体験を接続した。次の利用者確認は表情の見え方、長文と音声での操作感。 [UI設計と確認条件](docs/UI_DESIGN.md)
 
@@ -111,7 +119,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 ### Adaptive Interaction
 
-- 返答量を「短く・自然・詳しく・やさしく」の4種類から明示選択
+- 「話し方」で「短め・ふつう・詳しく・やさしく」の4種類を明示選択（APIのEnumは変更なし）
 - PydanticとTypeScriptで同じEnumを検証し、不明な値を拒否
 - Mockでは無料・決定的に差を再現し、OpenAIでは固定Instructionへ変換
 - 能力・感情を自動推定せず、選択はFrontendのSession内だけで保持
@@ -137,7 +145,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 - `POST /api/dialogue/stream`の`start -> text_delta* -> complete | error` NDJSON契約
 - OpenAI Structured JSONから、Split Escapeを考慮して`reply`だけをDecodeし、Raw JSONを非表示
-- 仮Assistant Messageは停止・失敗で破棄し、最終Pydantic検証後だけ履歴・長期記憶・演技・音声へCommit
+- 仮Assistant Messageは停止・失敗で破棄し、最終Pydantic検証後だけ履歴・長期記憶・演技を確定。文単位の先行音声は確定前に再生するため、下記の取消制約を持つ
 - Browserで初文・本文完了・発話開始を別々に計測
 - 実OpenAIで42 Delta、初文3,321ms、本文完了4,117ms、先行表示796ms、完了費用$0.0003424
 - 実Streamingの100ms CancelはLocalで0ms終了。上流計算と請求の停止は保証しない
@@ -159,7 +167,13 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 - 発話後を一律`idle`にせず、非中立時は弱めた表情・視線・呼吸のBaselineへ戻す
 - 実OpenAI固定3 Turnで初回24/26のFailureを検出し、補正後26/26。2 Run累計既知費用$0.00172914
 
-## 現在のEvidence（2026-09-13）
+## 現在のEvidence（2026-11-14）
+
+PR #18取り込み後の[main CI](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/runs/43552573386)（`94dab3d`）は成功。Vitest 212件、Pytest 193件、Playwright 47件に加え、型チェック・lint・build・Ruff・pip checkを確認した。これは固定入力や模擬障害を含む回帰テストであり、実マイクでの認識精度や会話の自然さの利用者評価ではない。
+
+カメラと視線は同じ実VRMと固定の表示ケースで候補を比較し、PC・スマホ幅、待機・生成中・発話、長文、音声エラー、体験切替を確認した。実音声の撮影ではない。[比較記録](docs/evaluations/dialogue-eye-contact-2026-11-13.md)。モデル差・実スマートフォン・継続的な聴取評価は未確認である。
+
+## 2026-09-13時点のEvidence（履歴）
 
 - Backend: 193 tests、Ruff、pip check。Frontend: 199 tests、型/lint/build。下書き保持追加後のLocal Browser全40件も成功（5.7分、再試行なし）。npm/pipの監査で既知脆弱性なし。今回の下書き/IME/文字数超過の範囲と実入力の未評価点は[検証記録](docs/evaluations/voice-draft-preservation-2026-09-13.md)を参照。
 - 録音取消/即時再開の旧Eventを再現・修正。Fake RecorderによるBrowser 20回のモード切替取消でTrackが毎回0へ戻り、Uploadなし、両Draft保持を確認。[記録](docs/evaluations/recording-lifecycle-2026-09-12.md)
@@ -234,7 +248,7 @@ Public化と、動作中BackendをInternetへ公開することは別である�
 
 1. 実マイク固定10文を静音/生活雑音で比較し、意味保持率、再試行、Latencyを記録する。
 2. 初回Setup、依存診断、Engine状態、復帰手順を一つの起動体験へまとめる。
-3. Three.js/VRMをDynamic importし、約870kBのproduction bundleを分割する。
+3. Three.js/VRMの遅延読込を検討し、大きなproduction bundleを分割する。現行のサイズと制約は[Architecture](ARCHITECTURE.md)を参照する。
 4. 主要画面を追加する場合だけ、残る`UIController` Event調整を領域別に分割する。
 5. Windows以外の起動導線が必要になった場合だけ、Cross-platform scriptまたはPackagingを選ぶ。
 

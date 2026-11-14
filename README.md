@@ -1,452 +1,205 @@
 # Adaptive Character Lab
 
 [![CI](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Local first](https://img.shields.io/badge/default-local--first-168b8a)](#privacyと外部通信)
 
-Textまたは音声で話しかけると、返答に合わせてVRM Avatarが声・表情・口形・しぐさを変える、ローカル優先の対話Applicationです。
+**月白しずくと、声や文字で会話するローカル優先のAIアプリ。** 月明かりの部屋で向き合い、返答に合わせて声・表情・視線・口の動きが変わります。
 
-> **Product Vision:** 自然に会話でき、利用者が許可したことだけを覚え、声・表情・視線・しぐさまで一貫して反応する、ローカル優先の個人AIキャラクター。
+![月明かりの部屋でしずくと対話する実アプリ画面。中央に現在のセリフ、右端に控えめな会話履歴](docs/assets/demo-overview.jpg)
 
-このプロジェクトで重視したのは、AI機能の数ではありません。利用者が「聞き取り中・考え中・発話中・失敗」を理解でき、音声機能が失敗してもTextへ戻れ、保存内容と外部送信を自分で管理できる一つの体験として仕上げることです。
+2026-11-14、PR #18反映後の実画面（1440×900）。定型応答のMockで2往復し、VOICEVOX未接続のため文字で続けている場面です。表示モデルは **AvatarSample_A © pixiv Inc. / pixiv VRoid Project**。独自制作モデルではなく、モデル本体は同梱していません。
 
-現在は、このVisionの基盤となるMock/OpenAI Provider境界、明示型Memory、VOICEVOX、5母音Lip Sync、制限付き表情・Gesture、明示返答スタイル、生成中の応答停止、Text Streaming、文単位の先行音声Queue、Version付きCharacter Profile `月白 しずく v1.1.0`を実装しています。さらに、Session内の短期感情を最大2 Turnだけ減衰させ、発話後も弱い表情・視線・呼吸を残し、同じ頷きの連発を抑える`Embodied Continuity v0.6`まで接続しました。多様な会話での自然さ、独自VRM、利用者による聴取評価は今後の対象であり、完成済みとは主張しません。
+個人開発・就活ポートフォリオとして、会話の生成だけでなく、**途中で止める、音声が失敗しても続ける、保存する内容を選ぶ**ところまで実装しています。React / TypeScript・Three.js / VRM・FastAPIを使い、非同期処理と状態の境界を設計しました。
 
-![Adaptive Character Labの対話Demo](docs/assets/demo-overview.jpg)
+既定のMockはローカルLLMではなく定型応答です。実LLMとの会話はOpenAIへ明示的に切り替えた場合のみ利用できます。実APIの固定ケース評価と自動テストは実施済みですが、多様な会話の自然さや実マイクの精度は引き続き検証中です。公開Webサービスではなく、単一PC・単一利用者向けです。
 
-> 1440×900のローカルMock対話画面。AvatarSample_A © pixiv Inc. / pixiv VRoid Project。モデル本体はRepositoryへ含めていません。
+## できること
 
-## 解決したい課題
+- **しずくと話す。** 文字入力、または録音した音声を端末内で文字起こしして送信。「話し方」は「短め・ふつう・詳しく・やさしく」から選べます。現在のセリフを中心に表示し、長文や過去の会話は必要なときだけ開きます。
+- **声と動きで返答を受け取る。** VOICEVOXの声・速さ・高さ・抑揚を調整でき、音声に合わせて5母音の口形と控えめな演技を再生します。音声入力は確認・修正してから送信し、読み上げに失敗しても文字の返答は残ります。
+- **覚えておくことを自分で選ぶ。** 通常の会話はRAMで管理。「覚えておいて：…」または設定から明示登録した記憶だけをSQLiteへ保存し、確認・編集・削除できます。
+- **別タブで一緒に謎を解く。** 体験「月待ちの便り」は、手掛かりを調べて小箱を開ける短い謎解き。配置・正誤判定・段階的ヒントはルールベースで、APIなしでも最後まで遊べます。AIが自律的に操作するAgentではありません。
 
-音声、LLM、Avatarを単純につなぐだけでは、待ち時間や失敗箇所が分からず、誤認識した文がそのまま送信され、どのDataが保存・外部送信されるのかも曖昧になりがちです。
+操作と3分デモの流れは[デモガイド](docs/DEMO.md)、体験モードの分担と制約は[体験設計](docs/EXPERIENCE_DESIGN.md)にまとめています。
 
-Adaptive Character Labでは、次の方針でこの問題を扱います。
+## 技術的に工夫したこと
 
-- Avatarの状態と短い表示で、処理中か復帰可能かを伝える。
-- 音声認識結果は自動送信せず、利用者が確認・修正できるDraftへ戻す。
-- VOICEVOXが停止してもText回答を残し、対話全体を止めない。
-- 生成中は送信Buttonを停止操作へ切り替え、停止したTurnを会話履歴や長期記憶へ保存しない。
-- 通常会話を永続保存せず、明示登録した長期記憶だけを確認・編集・削除できるようにする。
-- 自動演技へ自由なBone命令やScriptを渡さず、許可した感情・しぐさ・強度だけをSchemaで受け付ける。
-- 既定のMock Providerでは料金も外部AIへの送信も発生させない。
+### 1. 途中の返答と、保存済みの会話を分ける
 
-想定利用者は、Windows PC上で技術学習・相談・考えの整理に使う日本語話者です。現在は単一利用者のローカルApplicationであり、公開Web Serviceではありません。
+生成を止めた直後に履歴へ保存されると、画面とサーバーの状態が食い違います。そこでFastAPI側で、**停止の受付と保存開始を同じロックで排他制御**しています。停止を受け付けた返答は通常履歴にも明示記憶にも追加せず、保存開始済みなら停止不成立として通知します。
 
-## Demoで確認できること
+表示はNDJSON（1行ごとのJSON）によるストリーミングです。生成中の構造化JSONから本文だけを取り出し、演技情報は最終検証後に確定します。途中表示は仮の状態として扱い、停止・失敗時に破棄します。競合時の非保存、分断された文字列、停止後の表示復帰をAPI・単体・ブラウザテストで確認しています。
 
-最短の確認は、起動後に `何ができるの？` と送ることです。
+[実装：生成・停止・保存の境界](backend/app/main.py) · [競合のテスト](backend/tests/test_api.py) · [停止の評価記録](docs/evaluations/natural-conversation-cancel-2026-08-25.md)
 
-1. Avatarが`thinking`へ移る。
-2. Backendから検証可能なText部分だけが順次表示される。
-3. 最終Schema検証後、返答内容に応じた感情・強度・しぐさが確定する。
-4. VOICEVOXが利用可能なら音声を再生し、5母音の口形を同期する。
-5. 途中Gestureの後、現在の感情を弱めた表情・視線へ戻る。中立なら`idle`へ復帰する。
+### 2. 音声を先に作りながら、順番と取消しを守る
 
-3分版と1分版の説明順、失敗時の復帰手順は[Demo Guide](docs/DEMO.md)にまとめています。
+全文の完成と音声合成を待つと、話し始めるまでが長くなります。閉じた文からVOICEVOXへ渡し、**合成待ちと再生待ちを別のキュー**で管理することで、前の文を再生中に次の文を合成できます。停止や最終本文の不一致では、未再生の音声・口形・予約したしぐさを破棄します。
 
-### 画面の操作
+口形はVOICEVOXの母音タイミングを実WAV長へ合わせ、音量で開口量を調整する5母音Lip Syncです。子音まで完全に再現するものではありません。順序・停止・古い非同期処理の無効化はテストで確認し、実OpenAI＋VOICEVOXの単発評価も記録しています。**既に聞こえた先行音声は取り消せない**点は、この設計の制約です。
 
-上部の `対話 / 体験` で切り替えます。体験「月待ちの便り」では、しずくと小箱を開ける短い謎解きを遊べます。モードを往復しても各画面の履歴・下書き・盤面は保持し、切替時には生成・発話・録音を停止します。ページ再読込後の進行保存はありません。
+[実装：音声キュー](frontend/src/speech/StreamingSpeechQueue.ts) · [順序と停止のテスト](frontend/src/speech/speech.test.ts) · [実音声の評価と計測条件](docs/evaluations/streaming-speech-2026-08-25.md)
 
-しずくの下にある入力欄からメッセージを送ります。PCではEnterで送信、Shift + Enterで改行できます。複数行の下書きは入力欄が広がり、日本語の変換確定では送信しません。送信中は同じボタンが停止に変わります。右端に過去の会話を最大3件表示し、履歴ボタンで保持中の会話を開けます。長い返答には「全文を読む」が出ます。狭い画面では履歴ボタンから開きます。
+### 3. 会話表示をReactへ移し、3Dと既存処理を再利用する
 
-「設定」から音声と明示登録の記憶を開けます。「表示を調整」はモデル・表情・カメラへ直接移動します。設定を閉じても会話と下書きは維持され、Escapeでも閉じられます。音声エラーの「詳細」には元のエラーと回復方法を残しています。
+画面刷新で音声や3Dの状態まで作り直さないよう、Reactが所有する範囲を現在のセリフ・直近履歴・全文履歴に限定しました。入力や設定は既存のDOM制御に残し、同じ表示領域を二重に管理しません。`VRMViewer`はReactの再描画で作り直さず、生成・破棄の責務を分離しています。
 
-接続先の「Mock」は定型応答であり、ローカルLLMではありません。画面設計の理由と検証方針は[UI設計メモ](docs/UI_DESIGN.md)を参照してください。
+ブラウザテストでは、対話と体験の切替で同じCanvasと各モードの下書き・履歴が保たれること、長文・生成待ち・停止・狭い画面で表示が成立することを確認します。PR #18では実VRMの目の高さからカメラ位置を決め、頭部を固定せず自然に向き合う構図へ調整しました。
 
-## 主な機能
+[実装：Reactの表示境界](frontend/src/ui/DialoguePresentation.tsx) · [モード切替のテスト](frontend/e2e/experience.spec.ts) · [UI設計](docs/UI_DESIGN.md) · [カメラ・視線の比較記録](docs/evaluations/dialogue-eye-contact-2026-11-13.md)
 
-| 領域 | 実装内容 |
-| --- | --- |
-| Character Identity | `月白 しずく v1.1.0`、口調・価値観・避ける表現・Theme・Voice・演技上限を一つのProfileで管理。短い会話例と返答の意味に応じた演技選択を調整 |
-| 対話 | Text入力、Mock/OpenAI Provider切替、Structured Outputのreply-only Streaming、明示返答スタイル4種、生成中の応答停止、Token使用量、Timeout、Request ID |
-| Voice input | Push-to-Talk、マイク選択、約1秒無音の自動停止、5秒無発話Fallback、最大15秒、認識Draft確認、録音を始めない接続復帰 |
-| Voice output | ローカルVOICEVOX、閉じた文の先行合成、順序付き再生Queue、停止、再再生、Text回答を残すFallback |
-| Lip Sync | VOICEVOX母音Timingを`aa / ih / ou / ee / oh`へ同期し、音量Envelopeで開口量を調整 |
-| Avatar | VRM 1.0中心の読込、表情・姿勢・視線、瞬き・呼吸、モデル差異のFallback、3D Placeholder |
-| Adaptive Performance | 感情6種、Gesture 4種、Voice Style 5種、強度0〜1、途中Cue最大2件の制限付きPlan |
-| Embodied Continuity | Session別RAM感情、最大2 Turnの減衰、明示変化の優先、反復Gesture抑制、視線6種、発話後の感情Baseline |
-| Memory | Session別直近10往復、決定的要約、明示登録だけのSQLite長期記憶、CRUD、文字重なり検索 |
-| Cooperative experience | 独立した「体験」タブ、3か所の調査、月の栞の配置、任意の3段階ヒント、決定的な正誤判定、静かな結末。APIなしでも完遂可能 |
-| UI / Visual identity | 月明かりの部屋、セリフと右端の直近履歴、全文表示、音声・記憶・キャラクター設定のdialog |
-| Accessibility / UX | `prefers-reduced-motion`対応、演技強度3段階、Keyboard focus、文脈に応じた状態表示、段階的開示 |
-| Observability | 認識・初文・本文完了・発話開始の直近時間、Backend Request ID、Providerと失敗CodeのLog |
+### 4. 誤認識・保存・外部送信を、利用者が制御できるようにする
 
-Toolを選んで実行するAgent、RAG、Vision、Internet公開はまだ実装していません。`PerformancePlan`が制限付きであることと、Tool-using Agentが完成していることは別です。
+音声認識の結果は自動送信せず、編集中の下書きへ追記します。日本語変換中やモード切替後に遅れて届く結果も扱い、書きかけを壊さないようにしています。音声の失敗時には文字入力と返答を残します。
 
-### 体験「月待ちの便り」
+通常履歴はRAM内の直近10往復と決定的な要約、明示記憶だけがSQLiteです。実LLM・音声・定型応答はProvider境界で分け、外部送信は明示設定時だけ。演技も許可した感情・しぐさ・強度・最大2件の途中動作に制限し、任意のスクリプトや骨の操作命令は実行しません。感情の余韻は最大2往復だけRAMに残し、長期的な心理プロフィールにはしません。
 
-`体験 → 書斎に入る` で始めます。窓・手紙・小箱を調べ、月の栞を選んで3つの枠へ置き、「この並びで開ける」で確認します。必要な条件は手紙にあり、時間制限や誤答の罰はありません。導入用の小さな問題で、本格的な謎解きの難易度はまだ目指していません。
-
-ヒントは今の盤面に合わせて、合っている部分と次に確かめる一点を短く返します。`ヒントを聞く → もう少しヒント → 答えを見る` の順に深まり、答えの開示前には確認できます。これらの操作はAPI課金なし。Mock相談やAPI障害時の固定応答も同じ盤面照合を使います。[盤面ヒントの検証](docs/evaluations/board-aware-hints-2026-09-12.md)
-
-しずくへの自由な相談は、Mockなら固定応答、OpenAI設定時だけ従量課金のAPIを最大1回使います。送信範囲は今回の相談と体験内の履歴・開示済みの手掛かり・盤面。通常の会話や長期記憶は使いません。API停止時にも調査・配置・ヒントで最後まで遊べます。音声は共通の設定を使う既存のVOICEVOXで、新規ソフトウェアは不要です。
-
-AIは文章と控えめな演技を担当し、栞の移動や正解判定はしません。文章上の誤りやネタバレを完全には防げませんが、成功はサーバーが独立して判定します。[設計と制約](docs/EXPERIENCE_DESIGN.md)に、採用理由・取消・費用上限・保存範囲をまとめています。
-
-## 技術的なポイント
-
-### 1. 一往復を最後までつなぐVertical Slice
-
-Text/Voice入力からBackend、応答、音声、Lip Sync、表情、Gesture、停止・復帰までを独立したDemoの寄せ集めにせず、一つの状態遷移として接続しています。生成中に停止したTurnはBackendのProvider Taskまで取り消し、保存開始との境界を排他制御して、Session履歴と明示長期記憶へ追加しません。音声生成に失敗してもText対話は成功として残ります。
-
-Textは`POST /api/dialogue/stream`のNDJSONで順次表示します。OpenAIのStructured JSONをそのまま見せず、`reply`文字列の安全にDecodeできた部分だけをDeltaとして送ります。演技とMemoryは最終Pydantic検証後だけ確定し、途中停止や接続失敗では仮Messageを破棄するため、見えた途中Textが保存済みに見える状態を残しません。
-
-閉じた文だけは`StreamingSpeechSegmenter`から`StreamingSpeechQueue`へ渡し、VOICEVOXの合成と再生を別Queueで順序付けます。次の文を現在の音声再生中に合成でき、停止時は合成Request・音声・Lip Sync・未再生文をまとめて破棄します。既に聞こえた音声は取り消せないため、未完の語句は読ませず、この制約も評価記録へ残しています。
-
-### 2. Version付きCharacter Profile
-
-`CharacterProfile`が名前、口調、価値観、避ける表現、Theme Color、VOICEVOX話者とprosody、演技上限を一つのVersion付きSchemaで管理します。OpenAIでは固定`instructions`、Mockでは決定的応答、VOICEVOXでは`audio_query`、UIでは名前・Version・Taglineへ反映します。会話履歴や長期記憶からProfileを上書きさせず、Profile変更と会話Dataを分離しています。
-
-### 3. 自由命令を渡さない自動演技
-
-Providerが返せる演技はPydantic/TypeScript Schemaで制限しています。任意のBone名、角度、Script、Animation URLは受け付けません。Frontendでも値を再検証し、Model差異や不正応答を安全にFallbackします。
-
-### 4. Turnをまたぐ短期感情と身体の余韻
-
-`EmotionalContinuityStore`が非中立感情をSession別RAMへ保持し、Providerが中立へ戻った場合だけ最大2 Turnまで減衰させます。利用者が「嬉しい」「気持ちが軽くなった」など現在の変化を明示した場合は古い状態より優先します。同じ低強度Gestureの連続は抑え、感情から視線Behaviorと呼吸・揺れScaleを決定します。発話後も弱い感情Baselineへ戻るため、返答ごとに表情が切れて見える状態を避けます。「新しい会話」で履歴と一緒に削除され、SQLiteへは保存しません。
-
-### 5. 実音声時間に合わせる演技とLip Sync
-
-VOICEVOXの`audio_query`から母音長とアクセント句を取り出し、実際のWAV長へScaleします。口形は5母音、途中Gestureは近い句境界へ同期します。Timingが欠ける場合は音量ベースの単一口形へ戻ります。
-
-### 6. 明示型MemoryとData境界
-
-通常会話はRAMだけに保持します。長期記憶は「覚えておいて：...」または管理UIから追加した項目だけをSQLiteへ保存し、内容の確認、編集、個別削除、全削除を提供します。Embeddingを使わないため無料・Localですが、言い換えに弱いことも制約として明示しています。
-
-### 7. Local-firstとProvider境界
-
-既定のMockは決定的で、API Key、料金、外部AIへの送信が不要です。OpenAIを使う場合だけBackend環境変数で切り替え、KeyをFrontendへ渡しません。実Provider評価も、明示Gate、固定Request数、架空Data、Token使用量と費用記録を持つ専用Scriptへ分離しています。VOICEVOX接続先もLoopback HTTPだけを許可します。
-
-### 8. 利用者を推測しないAdaptive Interaction
-
-返答の長さと説明量を「話し方」の「短め・ふつう・詳しく・やさしく」から利用者が明示選択します。選択値はPydantic/TypeScriptの同じ4種類に制限し、Mockでは差を決定的に再現、OpenAIでは固定した指示へ変換します。声や曖昧な文面から能力・感情を断定せず、短期感情の補正も利用者が明示した少数の表現だけに限定します。返答StyleはSession内だけに保持してReload時に既定の「ふつう」へ戻します。
-
-### 9. 会話を主役にする情報設計
-
-Avatarと現在のセリフを部屋の中央に置き、履歴の全文、音声、記憶、演技調整、診断情報は必要なときに開きます。処理中・失敗・利用者の判断が必要な状態を会話の近くに表示します。Mobileでも入力欄が初期Viewport内に残ることをBrowser testで確認しています。
-
-### 10. 月明かりの対話シーン
-
-青い窓と暖色のランプ、手前の机を描いた背景をローカルで読み込みます。同じ画像の机部分をCanvasの手前に重ね、しずくを部屋の中に配置します。セリフと履歴はReactで描画し、VRMと音声のインスタンスは会話の更新やモード切り替えでも再利用します。
+[下書き保持の実装](frontend/src/transcription/VoiceDraft.ts) · [回帰テストと未確認点](docs/evaluations/voice-draft-preservation-2026-09-13.md) · [記憶と演技の設計](ARCHITECTURE.md)
 
 ## システム構成
 
 ```mermaid
 flowchart LR
-    User["User\nText / Push-to-Talk"] --> UI["TypeScript UI / React dialogue scene"]
-    UI --> Style["Response style\nexplicit 4 options"]
-    Profile["Character Profile v1\ntext / voice / performance / theme"] --> UI
-    Style --> Dialogue["DialogueController"]
-    Dialogue -->|"NDJSON stream"| API["FastAPI"]
-    Dialogue -. "DELETE active response" .-> API
-    API <--> Session["Session Memory\nRAM + summary"]
-    API <--> Affect["Emotional Continuity\nRAM + 2-turn decay"]
-    API <--> SQLite["Explicit Memory\nSQLite"]
-    API --> Provider{"Provider"}
-    Profile --> Provider
-    Provider --> Mock["Mock\nlocal / free"]
-    Provider --> OpenAI["OpenAI\nopt-in"]
-    Provider --> Plan["Bounded\nPerformancePlan"]
-    Plan --> Affect
-
-    UI --> PTT["MediaRecorder + VAD"]
-    PTT --> Whisper["faster-whisper\nlocal CPU"]
-
-    Dialogue --> SentenceQueue["Closed-sentence\nSpeech Queue"]
-    SentenceQueue --> SpeechAPI["FastAPI\n/api/speech"]
-    SpeechAPI --> Voicevox["VOICEVOX\nlocalhost"]
-    Profile --> SpeechAPI
-    Voicevox --> Timing["WAV + vowel / phrase timing"]
-    Timing --> Avatar["Three.js + VRM\nvoice / face / gesture"]
-    Affect --> Avatar
-    Dialogue --> Avatar
+    subgraph PC["利用者のPC"]
+        UI["ブラウザ / React・既存DOM"] -->|"送信・停止"| API["FastAPI"]
+        API -->|"NDJSON: 本文・最終演技"| UI
+        UI --> Avatar["Three.js / VRM・音声再生"]
+        API --> Mock["定型応答 / 既定"]
+        API <--> RAM["RAM / 通常履歴・短期感情"]
+        API <--> DB["SQLite / 明示記憶のみ"]
+        UI -->|"録音"| API
+        API --> STT["faster-whisper / 音声認識"]
+        UI -->|"文単位の合成要求"| API
+        API --> TTS["VOICEVOX / 音声合成"]
+    end
+    API -. "明示設定した場合のみ" .-> OpenAI["OpenAI API / 従量課金"]
 ```
 
-詳しい責務、Data flow、失敗時の挙動、採用しなかった構成は[ARCHITECTURE.md](ARCHITECTURE.md)にあります。
+APIキーはBackendの環境変数だけで扱います。OpenAI利用時は入力、直近履歴、要約、関連する明示記憶（最大3件）、固定のキャラクター設定などが送信対象です。体験タブの相談は通常対話・記憶とは分離しています。詳しいデータフローと責務は[ARCHITECTURE.md](ARCHITECTURE.md)、運用上の注意は[SECURITY.md](SECURITY.md)を参照してください。
 
-## 使用技術
+## 技術スタック
 
-| Layer | Technology | 選定理由 |
-| --- | --- | --- |
-| Frontend | TypeScript 6, Vite 8, React 19、既存DOM | セリフと履歴を一つの表示状態から描画し、入力や設定の移行は段階的に進めるため |
-| 3D / Avatar | Three.js, `@pixiv/three-vrm` | WebGLでVRM 1.0とMToonを扱い、Model差異を吸収するため |
-| Backend | Python 3.12, FastAPI, Uvicorn | SecretをBrowserから分離し、Pydanticで入出力を検証するため |
-| Dialogue | Local Mock / OpenAI Responses API | 無料で再現できる経路と、交換可能な実Providerを分離するため |
-| Speech input | MediaRecorder, Web Audio API, faster-whisper | 利用者操作後だけ録音し、認識音声を外部Serviceへ送らないため |
-| Speech output | VOICEVOX, HTTPX | 無料のLocal TTSをBackend境界越しに利用するため |
-| Storage | RAM, SQLite | 通常会話と明示長期記憶の保存範囲を分けるため |
-| Quality | Vitest, Playwright, ESLint, Pytest, Ruff, pip-audit, Gitleaks, GitHub Actions | 型・規約・Unit/API/Browser挙動・依存脆弱性・Secret・Clean環境を継続確認するため |
+| 領域 | 採用技術・役割 |
+| --- | --- |
+| 画面 | React 19・TypeScript 6・Vite 8。会話表示をReact化、入力・設定は既存DOM制御 |
+| キャラクター | Three.js・`@pixiv/three-vrm`。VRMの描画、表情・視線・口形 |
+| Backend | Python 3.12・FastAPI・Pydantic・HTTPX。入出力検証、非同期処理、Provider分離 |
+| 対話・音声 | 定型Mock / 任意のOpenAI Responses API、ローカルVOICEVOX、faster-whisper |
+| 保存 | 通常会話はRAM、明示記憶はSQLite、声の設定はブラウザのlocalStorage |
+| 品質確認 | Vitest・Pytest・Playwright、TypeScript・ESLint・Ruff、GitHub Actions・Gitleaks・依存監査 |
 
-Runtimeで外部CDNは使いません。Frontendは`package-lock.json`、Backendは固定した直接依存から復元します。
+固定バージョンは[Frontend](frontend/package.json)と[Backend](backend/requirements.txt)を参照してください。実行時に外部CDNからUIを読み込む構成ではありません。
 
 ## Quick Start
 
-### 対応環境
+まず無料の定型応答で試せます。
 
-- Windows 10/11（主な動作確認環境）
-- Node.js 22 LTS推奨（20.19以上、22.12以上、または24以上）
-- Python 3.12 64-bit
-- WebGLとMicrophone APIに対応するPC Browser
-
-VOICEVOX、VRM、OpenAI API Keyは最小起動には不要です。これらがなくてもMock対話と3D Placeholderを確認できます。
-
-### 1. 依存関係を準備
-
-PowerShellでRepository直下から実行します。
+Windows 10/11、Git、Node.js 22.12以上の22系、Python 3.12（64-bit）、WebGL対応ブラウザを用意します。Node.js 22系とPython 3.12はCIでも使用しています。初回の依存取得にはネット接続が必要です。
 
 ```powershell
+git clone https://github.com/yutoo77/adaptive-vrm-dialogue-agent.git
+cd adaptive-vrm-dialogue-agent
 .\setup.ps1
-```
-
-自動Test用の依存も入れる場合:
-
-```powershell
-.\setup.ps1 -Development
-```
-
-`-Development`はPlaywright用Chromiumも取得します。初回は約310MiBの追加Downloadがあり、Browser本体はRepositoryへ入りません。
-
-Push-to-Talk用の`small` Modelも事前取得する場合は`-PrepareTranscriptionModel`を追加します。初回取得は約464MiBのNetwork通信とDisk容量を使います。
-
-手動で準備する場合:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python -m pip install pip==26.2
-.\.venv\Scripts\python -m pip install -r backend\requirements-dev.txt
-cd frontend
-npm ci
-cd ..
-```
-
-### 2. 起動
-
-```powershell
 .\start_demo.ps1
 ```
 
-表示された <http://127.0.0.1:5173/> を開きます。`start_demo.cmd`のダブルクリックでも起動できます。停止は起動したTerminalで`Ctrl+C`です。
+表示された <http://127.0.0.1:5173/> を開き、「何ができるの？」と送ってみてください。停止は起動したターミナルで `Ctrl+C`。VRM・VOICEVOX・APIキーがなくても、代替の3D表示と文字対話を試せます。別のアプリがポート8000/5173を使用中なら起動を中止してPIDを案内し、自動終了はしません。
 
-起動ScriptはBackendとFrontendを一緒に管理します。既に同じApplicationが正常起動していればURLを案内し、Backendだけ残っていれば本人確認できたProcessだけを再利用します。別ApplicationがPort 8000/5173を使用中の場合は自動終了せず、PIDを表示します。
+PowerShellでスクリプトがブロックされた場合は、内容を確認したうえで、その起動だけ `powershell -ExecutionPolicy Bypass -File .\setup.ps1` のように実行できます。端末全体の実行ポリシーを変更する必要はありません。
 
-## Optional Setup
+<details>
+<summary>VRM・音声・実LLMを追加する</summary>
 
-### VRMモデル
+### VRM
 
-利用条件を確認した`.vrm`を画面へDrag & Dropするか、次へ配置します。
+利用条件を確認した `.vrm` を画面へドロップするか、`frontend/public/models/private/character.vrm` に配置します。この場所とVRMファイルはGit除外され、ビルドにもコピーされません。[モデルの利用条件記録](docs/model-license-record.md)も参照してください。
 
-```text
-frontend/public/models/private/character.vrm
-```
+### 音声出力
 
-このPathと`*.vrm`はGit除外され、production buildにもコピーされません。現在の検証Modelは`AvatarSample_A`ですが、本体はRepositoryへ含めていません。条件記録は[docs/model-license-record.md](docs/model-license-record.md)を参照してください。
+[VOICEVOX](https://voicevox.hiroshiba.jp/)を起動し、ローカルの `http://127.0.0.1:50021/docs` が開くことを確認します。「設定 → 音声 → 音声出力」で声・速さ・高さ・抑揚を変更し、「声を試す」で確認できます。既定は冥鳴ひまり（ノーマル / ID 14）。選択はブラウザに保存し、次の発話から適用します。後からEngineを起動した場合は「再接続」を使います。
 
-### VOICEVOX音声出力
+### 音声入力
 
-1. [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)からApplicationまたはEngineを取得する。
-2. VOICEVOXを起動し、<http://127.0.0.1:50021/docs>を確認する。
-3. 使用するStyle IDを`GET /speakers`で確認する。
-4. 必要なら起動前に環境変数を設定する。
+`small`認識モデルを事前取得する場合は、リポジトリ直下で実行します（初回は約464MiB）。
 
 ```powershell
-$env:VOICEVOX_SPEAKER_ID = "14"
-.\start_demo.ps1
+.\setup.ps1 -PrepareTranscriptionModel
+.\start_demo.ps1 -PrepareVoiceInput
 ```
 
-Character Profileの既定は冥鳴ひまり（ノーマル / ID 14）、話速`0.96`、音高`-0.01`、抑揚`0.94`です。**設定 → 音声 → 音声出力**で、インストール済みの声・スタイル、速さ、高さ、抑揚を変更し、「声を試す」で短い固定文を試聴できます。試聴は会話APIや会話履歴を使いません。
+`-PrepareVoiceInput`は取得済みモデルをBackendへ事前読込するだけで、録音・再ダウンロードはしません。録音はマイク操作後のみ、最大15秒です。認識結果を入力欄で確認してから送信します。初回準備後もCPU認識には数秒の待ちがあり、誤認識の修正が必要です。
 
-選択はこのブラウザの`localStorage`に保存し、次の発話から適用します。発話途中に変更しても、その返答の途中で声は切り替わりません。「しずくの標準に戻す」でBackendの既定へ戻せます。`VOICEVOX_SPEAKER_ID`は既定の話者を変える環境変数で、ブラウザに保存した選択があればそちらを優先します。VOICEVOXを後から起動した場合は「再接続」で一覧を取得します。
+### 実LLM（任意・有料）
 
-生成音声を公開するときは、設定欄のクレジットと、選んだ音声ライブラリの利用条件を確認してください。既定の声は`VOICEVOX:冥鳴ひまり`です。声の調整には新しいソフトウェアや課金APIは不要です。声を変えた際のキャラクターとの印象は利用者自身で再確認してください。VOICEVOXが停止していてもText対話は利用できます。
-
-### Push-to-Talk音声入力
-
-事前にModelを準備する場合:
-
-```powershell
-cd backend
-..\.venv\Scripts\python -m scripts.prepare_transcription_model
-```
-
-録音はMicrophone Buttonを押した時だけ始まります。最大15秒、4MiBまでです。認識結果は入力欄へ戻るだけで、自動送信しません。マイク名はPermission取得前に表示されないことがあります。
-
-書きかけがある場合、認識結果は改行して末尾に追加します。「体験」で認識待ちの間に編集した文も残ります。日本語変換中は確定を待ち、タブを離れた場合は未反映の結果を破棄します。対話1,000文字/体験500文字を超えても切り捨てず、送信時に短く直すよう案内します。録り直して置き換えたい時は、入力欄を消してから録音してください。[下書き保持の検証](docs/evaluations/voice-draft-preservation-2026-09-13.md)
-
-接続確認の一時的な失敗は1回だけ自動で再確認します。それでも失敗したら、マイクの代わりに出る「再接続」を押してください。会話・下書き・謎解きの進行は残り、再接続だけでは録音しません。録音データの自動再送も行いません。[接続復帰の検証](docs/evaluations/voice-input-recovery-2026-09-12.md)
-
-認識中の取消は、画面への結果反映を止めます。端末内の計算まで即座に止まる保証はありません。前の認識が残っている場合、次の録音は順番待ちにせず「前の音声を処理中」と返します。少し待って録り直すか、文字入力で続けられます。[処理待ちをためない設計](docs/evaluations/transcription-capacity-2026-09-13.md)
-
-デモの前に取得済みモデルを読み込む場合は、Repository直下で `.\start_demo.ps1 -PrepareVoiceInput` を使います。起動済みでも使え、同じBackendにモデルを保持します。録音・Download・課金はなく、CPU処理とRAM使用が増えます。未取得/準備失敗でもText Demoは続けられます。[事前読込](docs/evaluations/transcription-preparation-2026-09-13.md)
-
-現在のCPU認識には、準備後も数秒の待ちがあります。軽量設定の小規模比較では大幅短縮が得られず、認識品質の既定値は変えていません。[計測条件と結果](docs/evaluations/transcription-latency-2026-09-13.md)
-
-### OpenAI Provider
-
-既定はMockです。実APIを使う場合だけ、同じPowerShellで環境変数を設定します。
+起動中なら一度終了し、PowerShell 7でリポジトリ直下へ戻ってから次を実行します。起動スクリプトの終了後は作業場所が `frontend` へ移っている場合があります。キーをコマンド履歴へ直接書かず、入力を伏せて受け取ります。
 
 ```powershell
 $env:DIALOGUE_PROVIDER = "openai"
-$env:OPENAI_API_KEY = "自分のAPIキー"
-$env:OPENAI_MODEL = "gpt-5.6-luna"
+$env:OPENAI_API_KEY = Read-Host "OpenAI API key" -MaskInput
 .\start_demo.ps1
 ```
 
-KeyはBackendだけが読みます。`VITE_`で始まる環境変数、README、Screenshot、Chat、GitへKeyを入れないでください。OpenAI Providerでは入力、直近履歴、Session要約、関連すると判定した長期記憶最大3件が外部送信対象になります。API利用料金が発生します。
+モデルなどの設定名・既定値は[backend/.env.example](backend/.env.example)を参照してください。**このアプリは `.env` を自動読込しません。** 必要な値は同じターミナルの環境変数として指定します。Mockへ戻すときは停止後に `$env:DIALOGUE_PROVIDER = "mock"` として再起動します。
 
-2026-08-25の固定評価では`gpt-5.6-luna`を4 Turn使用し、5,275 input / 455 output tokens、完了Requestの保守的な費用見積りは$0.001601、完了応答Latency中央値は3,496msでした。料金は変わり得るため、実行前に[公式Model Page](https://developers.openai.com/api/docs/models/gpt-5.6-luna)を確認してください。再現手順と停止Requestを費用へ含められない理由は[実OpenAI評価記録](docs/evaluations/real-openai-dialogue-2026-08-25.md)にあります。
+OpenAI APIへの送信と従量課金が発生します。キーを `VITE_` 変数、Git、画面写真へ入れないでください。`store=False`はデータ保持ゼロを保証するものではなく、機微情報は送らないでください。
 
-同日のStreaming固定評価では、1,196 input / 86 output tokens、42 Delta、初文3,321ms、本文完了4,117msで、796ms早く読み始められました。完了1件の既知費用は$0.0003424です。これは1回のSmokeであり一般的な速度向上ではありません。詳細は[実OpenAI Streaming評価](docs/evaluations/real-openai-streaming-2026-08-25.md)を参照してください。
+</details>
 
-文単位音声の固定評価では、実OpenAI 1件と実VOICEVOXを組み合わせ、最初の閉じた文を3,602msで検出、WAV準備6,142ms、従来方式の比較値9,019msとなり、WAV準備を2,877ms前倒しできました。実際の可聴開始ではなく1回のWAV-ready比較です。1,196 input / 125 output tokens、既知費用$0.0003892で、詳細と取り消せない先行音声のRiskは[Streaming Speech評価](docs/evaluations/streaming-speech-2026-08-25.md)にあります。
+## 評価・テスト
 
-Character Identity固定評価では、互いに独立した4 Scenarioで名前とAI透明性、無理な励ましの回避、危険場面の慎重な演技、人格上書き耐性を確認し、**26/26 Check**が成功しました。6,192 input（Cached 3,024）/ 425 output tokens、既知費用は**$0.00120408**です。実VOICEVOXもProfile prosodyで10/10合成できました。詳細と限界は[Character Identity評価](docs/evaluations/character-identity-2026-08-25.md)にあります。
+**実装の回帰テストと、会話体験の評価を分けています。** 2026-11-14、PR #18取り込み後のmain（`94dab3d`）では、[GitHub Actionsの4ジョブが成功](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/runs/43552573386)しました。
 
-Embodied Continuity評価では`疲労 -> 中立的な橋渡し -> 明示的な回復`の固定3 Turnを実行しました。初回は回復を穏やかに保ちすぎて**24/26 Check**となり、明示された現在感情を優先する補正後に**26/26 Check**を通過しました。2 Run累計6 Request、10,623 input（Cached 4,997）/ 420 output tokens、既知費用は**$0.00172914**です。失敗と修正を含む詳細は[Embodied Continuity評価](docs/evaluations/embodied-continuity-2026-08-25.md)にあります。
+| 確認 | 結果・範囲 |
+| --- | --- |
+| Vitest / Pytest | Frontend 212件、Backend 193件。状態遷移、ストリーミング、停止、音声、記憶など |
+| Playwright | 47件。Mockでの対話・体験切替、下書き、設定、失敗復帰、PC / 狭い画面 |
+| 静的検査・ビルド | 型検査、ESLint、Ruff、pip check、Viteビルドが成功 |
+| 秘密情報・依存 | Gitleaks成功。11/14の実行依存監査はnpm `--omit=dev`・Backendとも検出0件。ただし開発依存を含むnpm監査には14件（high 3 / moderate 11）が残る |
 
-`store=False`を指定していますが、これはZero Data Retentionと同義ではありません。OpenAIの[Data controls](https://developers.openai.com/api/docs/guides/your-data)では、明示Opt-inがないAPI DataはModel Trainingへ使わない一方、標準のAbuse Monitoring LogにPrompt/Responseが最大30日含まれ得ると説明されています。機微情報を送らないでください。
+CI成功は脆弱性ゼロを意味しません。開発依存には通常のローカル起動で使うViteも含まれるため、警告を無害とは扱っていません。今回は依存更新を行わず、別途修正・回帰確認する課題として残しています。
 
-設定名は[backend/.env.example](backend/.env.example)で確認できます。Applicationは`.env`を自動読込しません。
+実API・音声の評価は、当時の条件と失敗例を含めて保存しています。
 
-## Privacyと外部通信
+- [実OpenAI対話（2026-08-25）](docs/evaluations/real-openai-dialogue-2026-08-25.md)：架空の固定4往復。未知の会話全般や利用者満足度の評価ではありません。
+- [文単位音声（2026-08-25）](docs/evaluations/streaming-speech-2026-08-25.md)：実OpenAI＋VOICEVOXの単発計測。WAV準備は6,142ms、全文後合成の比較値は9,019ms。可聴開始の実測や一般的な速度保証ではありません。
+- [会話の口調（2026-09-06）](docs/evaluations/conversation-style-2026-09-06.md)：改善前後9件ずつと、最終自己紹介2件。最終設定で全9件の再測定は未実施です。
+- [音声入力の遅延（2026-09-13）](docs/evaluations/transcription-latency-2026-09-13.md)、[カメラ・視線（2026-11-13）](docs/evaluations/dialogue-eye-contact-2026-11-13.md)：測定条件、採用判断、未確認点を記録。その他は[評価記録一覧](docs/evaluations/)へ。
 
-| 機能 | 既定 | 送信・保存 |
-| --- | --- | --- |
-| Mock dialogue | 有効 | BrowserとLocal Backend内。通常会話はRAMのみ |
-| OpenAI dialogue | 無効 | 明示設定時だけText文脈をOpenAI APIへ送信。`store=False`だが標準のAbuse Monitoring保持は別 |
-| VOICEVOX | 任意 | Textを`127.0.0.1`のEngineへ送信。WAVをRepositoryへ保存しない |
-| Push-to-Talk | 任意 | 音声をLoopback Backendへ送り、Local faster-whisperで認識。録音を保存しない |
-| VRM | 任意 | Browser内で読込。外部Uploadしない |
-| Long-term memory | 明示操作のみ | `backend/.local/memory.sqlite3`へ最大200件。暗号化なし |
+<details>
+<summary>ローカルで自動テストを実行する</summary>
 
-このBackendには認証、Rate Limit、TLS、複数利用者分離がありません。PortをInternetへ公開しないでください。詳細は[SECURITY.md](SECURITY.md)を参照してください。
-
-## Test / Quality
-
-Backend:
+リポジトリ直下から実行します。`-Development`はテスト依存とPlaywright用Chromiumを取得します。
 
 ```powershell
+.\setup.ps1 -Development
 .\.venv\Scripts\python -m ruff check backend
 .\.venv\Scripts\python -m pytest backend\tests
 .\.venv\Scripts\python -m pip check
 .\.venv\Scripts\python -m pip_audit -r backend\requirements.txt
-```
-
-Frontend:
-
-```powershell
 cd frontend
 npm run check
 npm run test:e2e
 npm audit
 ```
 
-`npm run test:e2e`は専用ポート15173/18000にMock固定のBackendとFrontendを起動します。ブラウザテスト用の長期記憶はRAMへ隔離し、所有者のSQLiteは開きません。Chromiumで対話、短期感情、Streaming、先行音声要求、返答スタイル、停止、設定のキーボード操作、下書き保持、記憶の編集、音声Fallback、狭い画面を確認します。手動Setupの場合は、最初に`npx playwright install chromium`を一度実行してください。
+ブラウザテストは専用ポート15173/18000と一時的な記憶領域を使い、所有者のSQLiteは開きません。録音の一部は模擬イベントを使い、CIにはVRM未配置時の代替表示も含まれます。実マイク、実端末の描画、声や表情の自然さは別途人が確認する必要があります。
 
-2026-09-05のUI改修では、Frontend単体83件・ブラウザ13件、Backend75件、Buildと静的検査を確認しました。実画面の測定値、初回の失敗と修正、未確認事項は[UI確認記録](docs/UI_REVIEW.md)に分けています。
+</details>
 
-2026-09-06の口調・演技選択調整後は、Frontend 87件・ブラウザ14件、Backend 89件、型検査・ESLint・Ruff・Build・pip checkが成功。npm audit / pip-auditは既知脆弱性0件でした。追加ブラウザテストは固定の演技データを使う表示確認であり、実API・実音声の通し評価とは分けています。
+## 制約と次の改善
 
-2026-08-25時点の確認結果:
+- **会話・声の自然さ**：実LLMは限定ケースでの確認です。読み間違い、音声認識の遅さや雑音への弱さが残り、5母音の口形も近似です。多様な会話・実マイク・聴取の評価を優先します。
+- **停止の限界**：既に再生した音声は戻せず、外部APIの計算・請求が即座に止まる保証もありません。保存開始後の停止は成功扱いにしません。
+- **記憶と個人化**：SQLiteは暗号化していません。記憶検索は文字重なり方式で、意味検索ではありません。話し方は明示選択、短期感情の補正は限定的な日本語ルールです。
+- **保守性・起動負荷**：React化は会話表示が中心。入力・設定などの`UIController`は整理の余地があります。JSビルドは約1.16MB（11/14）で、分割に関する警告も残っています。
+- **未実装の範囲**：Toolを使うAgent、RAG、Vision、独自制作VRM、公開Webサービスは未実装。認証や利用者ごとの権限制御がないため、サーバーをインターネットへ公開しないでください。
 
-- Frontend: TypeScript、ESLint、Vitest **83件**、Playwright browser smoke **7件**、production build成功
-- Backend: Ruff、Pytest **75件**、`pip check`成功
-- Dependency audit: npm **0件**、pip-audit **0件**の既知脆弱性
-- Browser: Desktop、390px幅、319px幅、実VRM、Mock対話、VOICEVOX、5母音Lip Sync、自動演技を確認
-- Browser console: warning/error **0件**
-- 実VOICEVOX固定10件: 合成・Timing検証 **10/10**
-- 自動演技固定10文: Schema/期待分類 **10/10**
-- 実OpenAI固定4 Turn: 完了 **4/4**、固定品質Check **21/21**、完了応答Latency中央値 **3,496ms**、既知費用上限 **$0.001601**
-- 実OpenAI Streaming: **42 Delta**、初文 **3,321ms**、本文完了 **4,117ms**、先行表示 **796ms**、既知費用 **$0.0003424**
-- 実OpenAI + VOICEVOX: 最初の閉じた文 **3,602ms**、WAV準備 **6,142ms**、従来比較から **2,877ms**前倒し、既知費用 **$0.0003892**
-- Character Identity: 実OpenAI **4/4 Scenario・26/26 Check**、Profile prosodyの実VOICEVOX **10/10**、既知費用 **$0.00120408**
-- Embodied Continuity: 実OpenAI初回 **24/26**で弱点を検出、修正後 **26/26**、2 Run累計既知費用 **$0.00172914**
+次の優先順位と完了条件は[開発ロードマップ](DEVELOPMENT_ROADMAP.md)に整理しています。機能を増やす前に、既存の会話体験と失敗時の復帰を検証します。
 
-固定Scenarioの成功は未知入力への一般化を保証しません。成功例だけでなく、否定表現・複合感情・Timing欠損・Stop/Failureを評価記録に残しています。
+## 詳細資料・ライセンス
 
-GitHub ActionsはSecret scan、Frontend、Backend、Browser smokeを別Jobで実行します。Clean install後、Mock対話、詳細設定の開閉、Mobile初期Viewportと横OverflowをHeadless Chromiumでも再現します。
+- [設計と責務](ARCHITECTURE.md) / [作品の目的・設計判断](PROJECT_DIRECTION.md) / [UI設計](docs/UI_DESIGN.md)
+- [デモの操作・復帰手順](docs/DEMO.md) / [評価記録](docs/evaluations/) / [セキュリティ](SECURITY.md)
 
-## Evaluation
+ソースコードは[MIT License](LICENSE)。VRM・音声ライブラリ等の条件とは別です。[第三者ライセンスとクレジット](THIRD_PARTY_NOTICES.md)を確認してください。
 
-- [声のカスタマイズ / 誤読の再現・音声入力の待ち時間](docs/evaluations/voice-settings-2026-09-06.md)
-- [会話の口調と演技選択 / 改善前後9件ずつ・自己紹介の追加2件](docs/evaluations/conversation-style-2026-09-06.md)
-- [実API対話の再確認 / Textと演技データ3件・残る体験評価](docs/evaluations/real-api-tempo-2026-09-06.md)
-- [描画環境と会話テンポ / GPU実測とFPS計測の修正](docs/evaluations/rendering-tempo-2026-09-06.md)
-- [Conversation tempo / 音声接続の再利用と計測の限界](docs/evaluations/conversation-tempo-2026-09-05.md)
-- [Voice output / 10回連続合成](docs/evaluations/voice-output-2026-08-15.md)
-- [Push-to-Talk / 実音声認識](docs/evaluations/speech-input-2026-08-15.md)
-- [Adaptive Performance / 固定10文とFailure Case](docs/evaluations/adaptive-performance-2026-08-18.md)
-- [Prosody Lip Sync / 5母音とアクセント句](docs/evaluations/prosody-lip-sync-2026-08-20.md)
-- [Adaptive Interaction / 明示4スタイルと境界](docs/evaluations/adaptive-interaction-2026-08-25.md)
-- [Natural Conversation / 生成中の応答停止](docs/evaluations/natural-conversation-cancel-2026-08-25.md)
-- [Natural Conversation / 実OpenAI固定4 Turnと費用](docs/evaluations/real-openai-dialogue-2026-08-25.md)
-- [Natural Conversation / 実OpenAI Streamingと3段階Latency](docs/evaluations/real-openai-streaming-2026-08-25.md)
-- [Natural Conversation / 文単位VOICEVOX Queue](docs/evaluations/streaming-speech-2026-08-25.md)
-- [Character Identity / 本文・声・演技の固定4 Scenario](docs/evaluations/character-identity-2026-08-25.md)
-- [Embodied Continuity / 3 Turnの短期感情・視線・Gesture](docs/evaluations/embodied-continuity-2026-08-25.md)
-- [Speech input方式の選定](docs/speech-input-decision.md)
-
-## Repository構成
-
-```text
-adaptive-vrm-dialogue-agent/
-├─ frontend/
-│  ├─ e2e/              # 対話・段階的開示・MobileのPlaywright browser smoke
-│  └─ src/
-│     ├─ dialogue/       # HTTP、対話状態、明示返答スタイル
-│     ├─ speech/         # VOICEVOX再生とLip Sync
-│     ├─ transcription/  # Push-to-Talkと音声認識
-│     ├─ ui/             # DOMと利用者向け表示
-│     └─ vrm/            # Three.js、VRM、表情・姿勢・動き
-├─ backend/
-│  ├─ app/               # FastAPI、Character Profile、Schema、Provider、Memory、Continuity
-│  ├─ scripts/           # Model準備と固定Scenario評価
-│  └─ tests/             # API、Provider、Speech、Memory Test
-├─ docs/
-│  ├─ assets/            # 公開可能なScreenshot
-│  └─ evaluations/       # 評価結果とFailure Case
-├─ .github/workflows/    # CI
-├─ setup.ps1             # 初回Setup
-├─ start_demo.ps1        # Frontend/Backend統合起動
-├─ ARCHITECTURE.md
-├─ PROJECT_DIRECTION.md
-└─ DEVELOPMENT_ROADMAP.md
-```
-
-## 現在の制約
-
-- BackendはLocal単一利用者向けで、Internet公開できる構成ではありません。
-- Textと閉じた文のVOICEVOX生成はStreaming中に始まります。既に再生した先行音声は取り消せず、最終`PerformancePlan`より先に始まった最初の文は中立速度です。停止は後続音声・未保存Turnを破棄しますが、上流Service側の計算・請求が即時終了するとは限りません。
-- faster-whisper `small`は、検証した5.621秒音声のAPI経由認識に約6.8秒かかりました。Noiseを含む固定マイク評価は未完了です。
-- SQLiteは暗号化していません。機微情報の保存には使えません。
-- 長期記憶検索は文字重なり方式で、Semantic Searchではありません。
-- 返答スタイルは長さと説明量の明示指定であり、利用者ごとの自動Personalizationや能力推定ではありません。実OpenAIは架空Dataの固定ケースでのみ評価しています。9月6日の口調調整は改善前後9件ずつと自己紹介の追加2件で、最終Promptによる全9件の再測定、多数回の分散、利用者が感じる自然さは未評価です。
-- Character Profileは現在`月白 しずく v1.1.0`のCode定義1種類です。複数Profile切替、UI編集、独自VRMとの統合、聴取評価は未完了です。
-- 短期感情はRAM内で最大2 Turnだけ継続します。Mock分類と明示変化の補正は日本語Keyword Ruleなので、皮肉、複合感情、未知の言い換えを正しく理解するとは限りません。最適な減衰時間も利用者評価前の初期値です。
-- Lip Syncは5母音に対応しますが、子音、撥音、促音、無声化母音は音量と近接母音で近似します。
-- production JavaScriptは約1.16MBで、Viteの500kB警告が出ます。部屋のWebPは約64kBです。
-- UIの静的MarkupとDeveloper Panel描画は分離済みですが、`UIController`には対話・Memory・Model操作のEvent制御が残り、主要画面を増やす場合は領域別Controller化が必要です。
-- 公式Sample Avatarは動作確認に適しますが、作品の独自性は自作Avatarより弱くなります。
-- VRMA、Motion Capture、複数Avatar、Mobile性能保証は対象外です。
-
-改善の優先順位と、今は追加しない機能は[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)にあります。
-
-## Project Documents
-
-- [PROJECT_DIRECTION.md](PROJECT_DIRECTION.md) — Productの目的、対象利用者、評価原則、Scope
-- [ARCHITECTURE.md](ARCHITECTURE.md) — Data flow、責務、Security境界、Fallback、技術Risk
-- [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) — 完了Gateと今後の優先順位
-- [docs/CHARACTER_DESIGN_BRIEF.md](docs/CHARACTER_DESIGN_BRIEF.md) — 独自VRMのPalette、Silhouette、演技・公開条件
-- [docs/DEMO.md](docs/DEMO.md) — 3分/1分Demoと失敗時の復帰
-- [SECURITY.md](SECURITY.md) — Local運用のSecurity境界と報告方法
-- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — Dependency、VOICEVOX、VRMの条件
-
-## License / Credits
-
-Source code is available under the [MIT License](LICENSE).
-
-- VOICEVOXを使った公開音声: `VOICEVOX:冥鳴ひまり`
-- ScreenshotのModel: AvatarSample_A © pixiv Inc. / pixiv VRoid Project
-- Model本体、VOICEVOX、音声Library、生成WAVはRepositoryへ同梱していません。
-
-第三者ComponentとAssetの条件は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)を確認してください。
+画面のモデルはAvatarSample_A © pixiv Inc. / pixiv VRoid Project。背景は画像生成ツールで制作した室内画です。既定の音声を公開する場合のクレジットは `VOICEVOX:冥鳴ひまり`。モデル本体・音声ライブラリ・生成音声・個人の会話データは同梱していません。

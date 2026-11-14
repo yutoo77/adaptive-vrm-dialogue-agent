@@ -1,14 +1,14 @@
 # Architecture
 
-更新日: 2026-11-13 / 対象: v0.6と対話画面の刷新
+更新日: 2026-11-14 / 対象: PR #18までの実装
 
 ## 現在の構成
 
 ```mermaid
 flowchart LR
-    User["利用者"] --> UI["UI modules\nMarkup・入力・状態・診断表示"]
+    User["利用者"] --> UI["UIController・React会話表示\n入力・状態・診断表示"]
     Profile["CharacterProfile v1\nIdentity・Voice・Performance・Theme"] --> UI
-    UI --> Style["ResponseStyle\n短く・自然・詳しく・やさしく"]
+    UI --> Style["ResponseStyle\n短め・ふつう・詳しく・やさしく"]
     Style --> DC["DialogueController\n送信・停止とAvatar状態を調整"]
     DC --> Client["DialogueClient\nNDJSON・Timeout・停止・応答検証"]
     Client --> Proxy["Vite /api proxy"]
@@ -19,7 +19,7 @@ flowchart LR
     LongMemory --> Retrieval["文字重なり検索\n関連最大3件・Local"]
     API --> Provider{"Provider境界\n本文・文脈・明示Style"}
     Profile --> Provider
-    Provider --> Mock["Mock Provider\n無料・外部送信なし"]
+    Provider --> Mock["Mock Provider\n定型応答・外部送信なし"]
     Provider --> OpenAI["OpenAI Responses API\n明示設定時のみ"]
     Provider --> Plan["Bounded PerformancePlan\n感情・強度・開始しぐさ・途中Cue・声色"]
     Profile --> Plan
@@ -81,10 +81,10 @@ Profileの口調は短い会話例で示し、毎回の自己紹介・質問・�
 5. `ConversationMemoryStore`から同じSessionの直近履歴と要約を取り出し、`PersistentMemoryStore`から入力に文字列上関連する最大3件を検索する。
 6. Context Dataを命令ではなく参照情報として区切り、Version付きCharacter Profileと`response_style`を固定Instructionへ変換してから、`DIALOGUE_PROVIDER`に応じてMockまたはOpenAI Providerを1回呼ぶ。直前の短期感情があれば命令ではないSession Dataとして渡す。Profileは利用者入力・履歴・記憶より上位の固定`instructions`に置き、会話Dataから上書きしない。OpenAIは`StructuredDialogueOutput`のRaw JSON Deltaから、完全にDecodeできた`reply`文字だけを公開する。Split EscapeやUnicode Surrogateは揃うまでBufferし、`performance` JSONを画面へ流さない。
 7. Browserは`text_delta`を一つの仮Assistant Messageへ追加する。同時に、`。！？!?`または改行で閉じた文だけをStreaming Speech Queueへ渡す。句読点のない長文は120文字以内で読点・空白を優先して分割し、未完の短い語句は最終応答までBufferする。
-8. 停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider Stream TaskをCancelし、仮Message、RAM履歴、明示長期記憶を破棄して`idle`へ戻す。既に保存開始へ入った場合は停止未成立として示し、成功扱いを偽らない。
+8. 停止受付と保存開始の境界を排他制御する。停止を受け付けた場合はProvider Stream TaskをCancelし、その返答の仮Messageを破棄して`idle`へ戻す。停止したTurnをRAM履歴や明示長期記憶へ追加せず、既存の記憶は保持する。既に保存開始へ入った場合は停止未成立として示し、成功扱いを偽らない。
 9. 成功した利用者発話と最終応答だけを1往復としてRAMへ追加し、10往復を超えた古い履歴を短文要約へ圧縮する。
 10. `覚えておいて：内容`に一致した成功Turnだけは、明示記憶としてSQLiteへ保存する。
-11. Provider完了後、PydanticとFrontendで最終本文と、許可済みEnum・0〜1強度・開始しぐさ1件・途中Cue最大2件の`PerformancePlan`を再検証する。さらにProfileの最大強度と意味整合を決定的に適用し、`EmotionalContinuityStore`が中立出力にだけ直前感情を最大2 Turn減衰して重ねる。利用者が「疲れた」「嬉しい」など現在状態を明示した場合は古い状態より優先し、同じ低強度Gestureの連発も抑える。解決後のPlanと連続性Dataを仮Message確定時にRAMへCommitする。本文は常に`textContent`で表示し、途中Deltaと最終本文が異なる場合は先行音声を破棄する。
+11. Provider完了後、PydanticとFrontendで最終本文と、許可済みEnum・0〜1強度・開始しぐさ1件・途中Cue最大2件の`PerformancePlan`を再検証する。さらにProfileの最大強度と意味整合を決定的に適用し、`EmotionalContinuityStore`が中立出力にだけ直前感情を最大2 Turn減衰して重ねる。利用者が「疲れた」「嬉しい」など現在状態を明示した場合は古い状態より優先し、同じ低強度Gestureの連発も抑える。解決後のPlanと連続性Dataを仮Message確定時にRAMへCommitする。本文はReactのテキストノード、既存DOM領域では`textContent`として表示し、HTMLとして解釈しない。途中Deltaと最終本文が異なる場合は先行音声を破棄する。
 12. VOICEVOX合成Queueと再生Queueを分け、前の文を再生中に次の閉じた文を順番に合成する。Profileのspeed/pitch/intonationを`audio_query`へ適用し、母音長を実WAV長へScaleして5口形Lip Syncを行う。最終Plan到着後にGestureとCueを適用し、発話後は中立なら`idle`、非中立なら弱めた表情・視線・呼吸のBaselineへ戻す。停止・失敗は合成Request、未再生文、口形、予約Cueを破棄する。
 13. 失敗時は仮Messageと先行音声Queueを破棄し、履歴も長期記憶も増やさず、秘密情報を含まない案内を表示して再送可能な状態へ戻す。既に再生された音声だけは取り消せない。
 
@@ -107,11 +107,11 @@ Frontendの各Controllerは`performance.now()`でBrowser側の利用者体験時
 ```text
 adaptive-vrm-dialogue-agent/
 ├─ frontend/
-│  ├─ e2e/              # Mock一往復のPlaywright Browser test
+│  ├─ e2e/              # 対話・音声・体験・画面操作のPlaywright回帰テスト
 │  ├─ src/dialogue/     # HTTP通信と対話状態
 │  ├─ src/transcription/ # Push-to-Talk、録音、認識API
 │  ├─ src/speech/       # VOICEVOX再生とLip Sync
-│  ├─ src/ui/           # DOMと利用者向け表示
+│  ├─ src/ui/           # React会話表示と既存DOMの入力・設定
 │  └─ src/vrm/          # Three.js、VRM読込、表情・姿勢・待機動作
 ├─ backend/
 │  ├─ app/              # FastAPI、Character Profile、設定、Schema、Provider
@@ -168,13 +168,14 @@ adaptive-vrm-dialogue-agent/
 ## UIの情報設計
 
 - 対話画面の一枚の背景にAvatar、現在のセリフ、入力を配置する。広い画面の右端に履歴を最大3件表示し、全件は履歴dialogから開く。長文の「全文を読む」は対象の返答の先頭を表示する。
-- 返答スタイルは会話へ直接影響するため入力欄の近くにSelectを置き、既定値を「自然に」にする。送信中は変更を無効化し、どのStyleで送ったかをTurn途中で変えない。
+- 入力欄の近くの「話し方」で「短め・ふつう・詳しく・やさしく」を選び、既定値は「ふつう」とする。送信中は変更を無効化し、どのStyleで送ったかをTurn途中で変えない。表示名とAPIのEnum（`concise / balanced / detailed / beginner`）は分ける。
 - 生成中は同じ送信Buttonを`応答を停止`へ切り替え、別の停止Controlを増やさない。停止成功時はAssistant本文を追加せず、履歴と長期記憶へ保存していないことを短いNoticeで示す。
 - 正常な待機状態は重複表示せず、処理中、失敗、利用者の判断が必要な状態だけを会話の近くへ表示する。
 - 音声設定、長期記憶、演技調整、診断情報はNative `dialog`内にまとめる。3つのTabと内部の`details`で段階的に開示し、Escape、Tab循環、開いたボタンへのFocus復帰を保つ。会話ログと入力は別領域なので、設定操作で位置や下書きをリセットしない。
 - Providerの送信範囲など、普段の操作を妨げる長文は短いLabelのTooltipと`aria-describedby`、READMEへ分ける。
 - 390px/319px幅でも会話入力を初期Viewport内へ残し、横Overflowを発生させないことをPlaywrightで確認する。
 - 対話Stageはローカルの部屋画像と透明なVRM Canvasを重ねる。体験モードには同じViewerのDOMを移動し、固有のフレーミングとライティングに切り替える。
+- 通常対話のカメラ高さは読込直後の中立姿勢の目の位置から求め、画面構図の注視点とは分ける。視線はカメラを基準に既存の微小移動を加え、頭や首を固定しない。体験モードは従来の画角を維持する。[実VRMでの比較と限界](docs/evaluations/dialogue-eye-contact-2026-11-13.md)
 - UIのAnimationやTransitionも`prefers-reduced-motion`で抑制し、意味のある状態Textを装飾だけで置き換えない。
 
 ## Dataと外部通信
@@ -217,7 +218,7 @@ adaptive-vrm-dialogue-agent/
 - 体験は独立ControllerとRAMストア: 通常の対話画面・履歴・下書きは維持し、モード切替で既存Avatar DOMだけを移動する。音声再生とLip Syncは別のインスタンスで、通常会話の再生データを守る。
 - パズルの成功は固定ルールで判定: `ExperienceService`だけが盤面と成功を更新し、AIは文章・許可された弱い演技のみ担当する。独立したProvider adapterへ体験資料だけを渡し、通常記憶へアクセスさせない。詳細は[体験設計](docs/EXPERIENCE_DESIGN.md)。
 - 盤面ヒントは純粋関数: `experience_guidance`は手紙の開示後だけ呼び、現在の配置と2条件を照合する。ヒント・誤答・Mock/API障害時に再利用し、配置や成功は変更しない。答え開示の確認dialogはUIの誤操作防止であり、サーバー権限の代わりにはしない。
-- Reactへの段階移行。`#dialogue-presentation`の中はReactだけが描画し、既存の`UIController`はコールバックで表示を更新する。フォーム・設定・体験と3D Viewerは既存のDOM境界に置く。初回の暫定表示を文単位の音声処理より先に反映する。根を破棄するときは`unmount()`で表示と監視を解放する。
+- Reactへの段階移行。`#dialogue-presentation`の中はReactだけが描画し、既存の`UIController`はコールバックで表示を更新する。フォーム・設定・体験と3D Viewerは既存のDOM境界に置く。Reactの再描画やモード切替でVRMインスタンスを作り直さない。初回の暫定表示を文単位の音声処理より先に反映する。根を破棄するときは`unmount()`で表示と監視を解放する。
 - FastAPIを採用: APIキーをBrowserへ渡さず、入力検証とProvider差異を集約する。
 - Mockを既定: 初回起動、Test、Demo練習で料金とNetwork依存をなくす。
 - 返答スタイルは明示選択: 利用者の能力や感情を推定せず、4種類のEnumをFrontendからProviderまで通す。
@@ -232,13 +233,13 @@ adaptive-vrm-dialogue-agent/
 
 Local speechのHTTP clientは`VoicevoxSpeechProvider`内で遅延生成して共有し、FastAPIの終了処理で閉じる。文ごとに接続準備を繰り返さず、端末内の音声を環境Proxyへ流さない。評価用CLIなどでProviderを直接所有する場合も`finally`で`aclose()`する。少数の同一WAV比較では中央値594ms短縮したが、会話全体や描画負荷込みの改善保証ではない。[計測と再現手順](docs/evaluations/conversation-tempo-2026-09-05.md)
 
-- production JavaScriptが約1.16MBで、低性能PCや初回Loadに影響する可能性がある。
+- 2026-11-14の[main CI](https://github.com/yutoo77/adaptive-vrm-dialogue-agent/actions/runs/43552573386)ではproduction JavaScriptが約1.16MB（gzip約308KB）。低性能PCや初回Loadへの影響は別途測定が必要。
 - Pythonの間接依存を完全固定するlock fileがなく、将来のClean installで差が出る可能性がある。
 - 静的MarkupとDeveloper Panel描画は`UIController`から分離したが、対話、Memory、Model操作のEvent調整は同Classに残る。新しい主要画面を足す場合は領域別Controller化が必要。
 - OpenAIの固定`Safety Identifier`はローカル単一利用者用。公開時は個人情報を含まない利用者別識別子へ変える。
 - `store=False`でも標準のAbuse Monitoring Logに入力と応答が最大30日含まれ得る。機微情報を送信しない運用と、Account側Data Controlの確認が必要。
 - 認証、Rate Limit、Security Header、監視がないため、Internet公開できる構成ではない。
-- Full-body寄りのFramingでは、Avatarの表情がDemoで伝わりにくい場合がある。
+- 通常対話は顔を大きく見せる構図へ変更済みだが、目の骨・LookAt・表情の実装が異なるVRMで同じ印象になることは保証していない。
 - Local起動はWindows script中心。CIはUbuntuでTest/Buildするが、Linux/macOSの対話Demo起動は未確認。
 - 通常のVOICEVOX `/synthesis`はClient切断後もEngine側処理を直ちにCancelできない。実験的なCancel APIは現段階では採用しない。
 - 閉じた文は最終Schema検証前に再生できるため、既に聞こえた内容は取消不能である。最終`PerformancePlan`より早く始まる最初の文は中立速度になり得る。

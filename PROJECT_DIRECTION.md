@@ -1,6 +1,6 @@
 # Project Direction
 
-更新日: 2026-08-25
+更新日: 2026-11-14（過去の評価結果は実施時点の記録として保持）
 
 Adaptive Character Labは、Text/Voice対話の結果を、利用者が理解できる状態表示、音声、表情、口形、しぐさへつなぐローカル優先のVRM対話Applicationである。
 
@@ -40,6 +40,7 @@ Avatarが学習効果を必ず高める、Voiceが常に使いやすい、とは
 
 | 領域 | 現在地 | 根拠 |
 | --- | --- | --- |
+| 対話画面 | 月明かりの部屋、現在のセリフ、控えめな直近履歴。会話表示だけReactへ移行し、既存VRMを再利用 | [UI設計](docs/UI_DESIGN.md)、[カメラ・視線の比較](docs/evaluations/dialogue-eye-contact-2026-11-13.md)、Playwright |
 | VRM | 表示、Placeholder、状態・表情・姿勢・視線、Reduced Motion | Browser実モデル確認、Frontend Test |
 | Text dialogue | Mock/OpenAI境界、reply-only Streaming、明示返答スタイル4種、入力/応答検証、生成中の停止、Token使用量、Timeout、Request ID | API/Controller/Browser Test、停止時非保存Test、実OpenAI固定4 Turn 4/4・Streaming 42 Delta |
 | Voice output | VOICEVOX、閉じた文の先行合成、順序Queue、停止、再再生、Fallback | 実Engine固定10件、実OpenAI+VOICEVOX 1件、Browser確認 |
@@ -47,7 +48,7 @@ Avatarが学習効果を必ず高める、Voiceが常に使いやすい、とは
 | Voice input | Push-to-Talk、マイク選択、自動停止、Draft確認 | 自動Testと実マイク1件。Noise評価は未完了 |
 | Memory | Session 10往復、決定的要約、明示SQLite、CRUD、Local検索 | Session分離/Persistence Test |
 | Adaptive Performance | 制限付き感情・Gesture・強度・Cue・Voice Style | 固定10文、Failure Case、実VRM比較 |
-| Character Identity | `月白 しずく v1.0.0`の口調・価値観・禁止表現・Theme・Voice・演技上限を本文/音声/演技/UIへ接続 | 実OpenAI 4/4・26/26、実VOICEVOX 10/10。独自VRM・聴取評価は未完了 |
+| Character Identity | `月白 しずく v1.1.0`の口調・価値観・禁止表現・Theme・Voice・演技上限を本文/音声/演技/UIへ接続 | v1.0.0時点は実OpenAI 4/4・26/26、実VOICEVOX 10/10。v1.1.0の口調比較は[別記録](docs/evaluations/conversation-style-2026-09-06.md)。独自VRM・聴取評価は未完了 |
 | Embodied Continuity | Session内の感情を最大2 Turn減衰し、明示変化を優先。同じGestureの反復を抑え、発話後も弱い表情・視線・呼吸へ戻す | API/Unit/Browser、実OpenAI初回24/26・修正後26/26。主観評価は未完了 |
 | Portfolio quality | README、Screenshot、License、CI、Security/Notice、Demo Guide | Public RepositoryとCIで確認 |
 
@@ -55,15 +56,15 @@ Toolを実行するBounded Agent、RAG、Visionは未実装であり、現在の
 
 ## 設計判断
 
-### vanilla TypeScriptを継続
+### 会話表示に絞ってReactへ移行
 
-単一画面ではReact導入の効果より、Dependencyと抽象化の増加が大きいと判断した。Dialogue、Speech、Transcription、VRMをController/Client単位に分け、Frameworkなしでも境界を保つ。
+初期実装はVanilla TypeScriptだったが、現在のセリフ、直近履歴、全文履歴という複数の表示を整理するため、PR #17で会話表示をReactへ移行した。入力・設定・体験は既存DOMに残し、同じ領域を二重に管理しない。Dialogue、Speech、Transcription、VRMのController/Clientは再利用し、Reactの再描画で3Dインスタンスを作り直さない。
 
-弱点は`UIController`が大きくなったこと。新しい主要画面を追加する前に、表示領域別のComponent/Presenterへ分割する余地がある。
+全面的なReact化は完了していない。`UIController`には入力や設定のイベント調整が残るため、今後の画面追加で必要になった領域だけを分割する。
 
 ### Mockを既定にする
 
-初回起動、Test、Demo練習を料金・API Key・Networkから切り離せる。OpenAI Providerは交換可能な境界として残し、明示設定時だけ外部送信する。
+MockはローカルLLMではなく定型応答である。初回起動後の対話、Test、Demo練習をAPI利用料や外部AI通信から切り離せる。OpenAI Providerは交換可能な境界として残し、明示設定時だけ外部送信する。
 
 ### Local Voiceを先に選ぶ
 
@@ -79,7 +80,7 @@ VOICEVOXとfaster-whisperにより、音声の外部送信とAPI利用料を避�
 
 ### 返答スタイルを推測しない
 
-利用者が「短く・自然・詳しく・やさしく」を明示選択し、BackendまでSchemaで伝える。能力や潜在的な心理状態は推定しない。短期感情では「疲れた」「嬉しい」など現在状態を明言した限定的な日本語表現だけを決定的に扱い、曖昧なSentiment分類は行わない。選択も感情状態も長期保存しない。Mockは差を決定的に再現し、OpenAI利用時も同じ4種類を固定Instructionへ変換する。
+利用者が「話し方」で「短め・ふつう・詳しく・やさしく」を明示選択し、BackendまでSchemaで伝える。能力や潜在的な心理状態は推定しない。短期感情では「疲れた」「嬉しい」など現在状態を明言した限定的な日本語表現だけを決定的に扱い、曖昧なSentiment分類は行わない。選択も感情状態も長期保存しない。Mockは差を決定的に再現し、OpenAI利用時も同じ4種類を固定Instructionへ変換する。
 
 ### 一つのTurnで演技を終わらせない
 
