@@ -83,8 +83,9 @@ test("short emotional residue remains visible without adding another control", a
 test("explicit response style reaches the free Mock provider", async ({ page }) => {
   await page.goto("/");
 
-  const style = page.getByRole("combobox", { name: "返答の詳しさ" });
+  const style = page.getByRole("combobox", { name: "話し方", exact: true });
   await expect(style).toHaveValue("balanced");
+  await expect(style.locator("option:checked")).toHaveText("ふつう");
   await style.selectOption("detailed");
   await page.evaluate(() => {
     const state = window as unknown as { streamingTransitionSeen: boolean };

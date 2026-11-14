@@ -23,6 +23,9 @@ test("settings preserve the draft, contain focus and return it on Escape", async
   await expect(page.getByRole("tabpanel", { name: "記憶", exact: true })).toBeVisible();
   await page.keyboard.press("End");
   await expect(page.getByRole("tab", { name: "キャラクター", exact: true })).toBeFocused();
+  await dialog.locator("summary").filter({ hasText: /^カメラ$/ }).click();
+  await expect(page.getByRole("slider", { name: "上下の向き", exact: true })).toHaveValue("0");
+  await page.getByRole("tab", { name: "キャラクター", exact: true }).focus();
   await page.keyboard.press("Home");
   await expect(voice).toBeFocused();
   for (const key of ["Tab", "Shift+Tab"]) {

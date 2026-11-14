@@ -443,8 +443,8 @@ export class UIController {
       playing: "読み上げ中",
       ready: "読み上げが終わりました",
       stopped: "読み上げを停止しました",
-      unavailable: "音声出力は未接続です。文字で会話できます。",
-      error: "音声を再生できません。文字で会話できます。",
+      unavailable: "音声未接続・文字で会話できます",
+      error: "再生できません・文字で会話できます",
     };
     this.required("#speech-status-summary").textContent = summaries[status.state];
     button.hidden = status.action === "none";

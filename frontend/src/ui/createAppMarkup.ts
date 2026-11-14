@@ -100,10 +100,10 @@ export function createAppMarkup(): string {
             <div class="composer">
             <div class="composer-tools">
               <label class="response-style-control" for="response-style-select">
-                <span>返答</span>
-                <select id="response-style-select" aria-label="返答の詳しさ" title="次の返答の詳しさを選択">
-                  <option value="concise">短く</option>
-                  <option value="balanced" selected>自然に</option>
+                <span>話し方</span>
+                <select id="response-style-select" aria-label="話し方" title="次の返答の長さや説明の仕方を選択">
+                  <option value="concise">短め</option>
+                  <option value="balanced" selected>ふつう</option>
                   <option value="detailed">詳しく</option>
                   <option value="beginner">やさしく</option>
                 </select>
@@ -308,7 +308,7 @@ export function createAppMarkup(): string {
                 <div class="inner-tool-content camera-controls">
                   ${cameraRange("distance", "距離", 0.65, 1.8, 0.01, 1)}
                   ${cameraRange("heightOffset", "高さ", -0.5, 0.5, 0.01, 0)}
-                  ${cameraRange("lookAtOffset", "視線", -0.4, 0.4, 0.01, 0)}
+                  ${cameraRange("lookAtOffset", "上下の向き", -0.4, 0.4, 0.01, 0)}
                   ${cameraRange("modelOffset", "位置", -0.6, 0.6, 0.01, 0)}
                   ${cameraRange("scale", "大きさ", 0.65, 1.45, 0.01, 1)}
                   <button id="camera-reset" class="text-button" type="button">標準へ戻す</button>
