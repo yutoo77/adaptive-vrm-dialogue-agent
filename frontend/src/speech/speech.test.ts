@@ -1,0 +1,685 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { SpeechApiError, SpeechClient } from "./SpeechClient";
+import {
+  getVoicePlaybackRate,
+  resolveSpeechDurationMs,
+  SpeechController,
+  type SpeechAudio,
+  type SpeechCallbacks,
+  type SpeechGateway,
+  type LipSyncOutput,
+} from "./SpeechController";
+import type { SpeechHealth, SpeechStatus, SpeechSynthesisResult, SpeechTiming, VoiceSettings } from "./types";
+
+const WAV_BYTES = new Uint8Array([
+  82, 73, 70, 70, 0, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32,
+]);
+const READY_HEALTH: SpeechHealth = {
+  status: "ready",
+  provider: "voicevox",
+  speaker_id: 7,
+  engine_version: "0.25.2",
+  speaker_name: "テスト話者",
+  style_name: "ノーマル",
+  credit: "VOICEVOX:テスト話者",
+  message: "ready",
+};
+
+it("keeps one voice through sentences and final-text corrections; edits affect the next response", async () => {
+  const settings = { speaker_id: 14, speed_scale: 0.96, pitch_scale: -0.01, intonation_scale: 0.94 };
+  const selected: Array<VoiceSettings | undefined> = [];
+  const observed = createObservedCallbacks();
+  const controller = new SpeechController(createGateway({
+    synthesize: async (_text, _signal, voice) => {
+      selected.push(voice);
+      return { audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing: null };
+    },
+  }), observed.callbacks, null, () => new FakeAudio(), {
+    createObjectURL: () => "blob:voice-test", revokeObjectURL: vi.fn(),
+  });
+  controller.setVoiceSettings(settings);
+  controller.beginStreaming();
+  controller.appendStreamingText("最初の文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(1));
+  controller.setVoiceSettings({ ...settings, speaker_id: 3, speed_scale: 1.2 });
+  controller.appendStreamingText("次の文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(2));
+  expect(selected).toEqual([settings, settings]);
+  controller.completeStreaming("最初の文。訂正された文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(3));
+  expect(selected[2]).toEqual(settings);
+  controller.speak("新しい声で話す文。");
+  await vi.waitFor(() => expect(selected).toHaveLength(4));
+  expect(selected[3]).toEqual({ ...settings, speaker_id: 3, speed_scale: 1.2 });
+  controller.dispose();
+});
+
+class FakeAudio implements SpeechAudio {
+  public currentTime = 0;
+  public playbackRate = 1;
+  public readonly duration: number;
+  public readonly play: () => Promise<void>;
+  public readonly pause = vi.fn();
+  private readonly listeners = new Map<"ended" | "error", () => void>();
+
+  public constructor(play: () => Promise<void> = async () => undefined, duration = 4) {
+    this.play = vi.fn(play);
+    this.duration = duration;
+  }
+
+  public addEventListener(type: "ended" | "error", listener: () => void): void {
+    this.listeners.set(type, listener);
+  }
+
+  public emit(type: "ended" | "error"): void {
+    this.listeners.get(type)?.();
+  }
+}
+
+function createObservedCallbacks() {
+  const statuses: SpeechStatus[] = [];
+  const playback: Array<{ readonly type: string; readonly durationMs?: number }> = [];
+  const warnings: string[] = [];
+  const latencies: number[] = [];
+  const callbacks: SpeechCallbacks = {
+    onStatusChange: (status) => statuses.push(status),
+    onPlaybackChange: (event) => playback.push(event),
+    onWarning: (message) => warnings.push(message),
+    onLatency: (latencyMs) => latencies.push(latencyMs),
+  };
+  return { callbacks, statuses, playback, warnings, latencies };
+}
+
+function createGateway(overrides: Partial<SpeechGateway> = {}): SpeechGateway {
+  return {
+    getHealth: async () => READY_HEALTH,
+    synthesize: async (): Promise<SpeechSynthesisResult> => ({
+      audio: new Blob([WAV_BYTES], { type: "audio/wav" }),
+      timing: null,
+    }),
+    ...overrides,
+  };
+}
+
+function deferredBoolean() {
+  let resolve!: (value: boolean) => void;
+  const promise = new Promise<boolean>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
+describe("SpeechClient", () => {
+  it("requests WAV audio from the backend and validates its header", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ text: "こんにちは" }));
+      return new Response(WAV_BYTES, {
+        status: 200,
+        headers: {
+          "content-type": "audio/wav",
+          "x-speech-timing-version": "1",
+          "x-speech-duration-ms": "4000",
+          "x-speech-phrase-boundaries": "1200,2600",
+          "x-speech-visemes": "o:100:300,i:450:250,a:800:350",
+        },
+      });
+    });
+    const client = new SpeechClient(fetchMock, "/api", 1000);
+
+    const result = await client.synthesize("こんにちは");
+
+    expect(result.audio.type).toBe("audio/wav");
+    expect(result.audio.size).toBe(WAV_BYTES.byteLength);
+    expect(result.timing).toEqual({
+      durationMs: 4000,
+      phraseBoundariesMs: [1200, 2600],
+      visemes: [
+        { viseme: "o", startMs: 100, durationMs: 300 },
+        { viseme: "i", startMs: 450, durationMs: 250 },
+        { viseme: "a", startMs: 800, durationMs: 350 },
+      ],
+    });
+  });
+
+  it("uses the safe backend speech error and request ID", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          detail: {
+            code: "voicevox_unreachable",
+            message: "VOICEVOXを起動してください。",
+            request_id: "speech-1",
+          },
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const client = new SpeechClient(fetchMock, "/api", 1000);
+
+    await expect(client.synthesize("テスト")).rejects.toMatchObject({
+      message: "VOICEVOXを起動してください。",
+      status: 503,
+      code: "voicevox_unreachable",
+      requestId: "speech-1",
+    });
+  });
+
+  it("keeps valid WAV playback while discarding malformed optional timing metadata", async () => {
+    const client = new SpeechClient(
+      async () =>
+        new Response(WAV_BYTES, {
+          status: 200,
+          headers: {
+            "content-type": "audio/wav",
+            "x-speech-timing-version": "1",
+            "x-speech-duration-ms": "1000",
+            "x-speech-phrase-boundaries": "700,300",
+            "x-speech-visemes": "run_shell:0:100",
+          },
+        }),
+      "/api",
+      1000,
+    );
+
+    const result = await client.synthesize("Fallbackテスト");
+
+    expect(result.audio.size).toBe(WAV_BYTES.byteLength);
+    expect(result.timing).toEqual({ durationMs: 1000, phraseBoundariesMs: [], visemes: [] });
+  });
+});
+
+describe("SpeechController", () => {
+  it("applies a bounded voice-style tempo without changing the generated WAV", () => {
+    expect(
+      getVoicePlaybackRate({ emotion: "happy", intensity: 0.5, gesture: "soft_bounce", voice_style: "bright", cues: [] }),
+    ).toBeCloseTo(1.03);
+    expect(
+      getVoicePlaybackRate({ emotion: "gentle", intensity: 1, gesture: "small_nod", voice_style: "gentle", cues: [] }),
+    ).toBeCloseTo(0.93);
+  });
+
+  it("reports the resolved speaker, style, and credit after health check", async () => {
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks);
+
+    await controller.initialize();
+
+    expect(observed.statuses.at(-1)).toEqual({
+      state: "available",
+      message: "VOICEVOX:テスト話者 / ノーマル v0.25.2 / ID 7",
+      action: "none",
+    });
+  });
+
+  it("moves through generation, playback, completion, and replay readiness", async () => {
+    const audio = new FakeAudio();
+    const observed = createObservedCallbacks();
+    const revoke = vi.fn();
+    const onStarted = vi.fn();
+    const controller = new SpeechController(
+      createGateway(),
+      observed.callbacks,
+      null,
+      () => audio,
+      { createObjectURL: () => "blob:test", revokeObjectURL: revoke },
+    );
+
+    controller.speak(
+      "こんにちは",
+      {
+        emotion: "happy",
+        intensity: 0.5,
+        gesture: "soft_bounce",
+        voice_style: "bright",
+        cues: [],
+      },
+      onStarted,
+    );
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    expect(observed.playback).toEqual([{ type: "started", durationMs: 3883, phraseBoundariesMs: [] }]);
+    expect(audio.playbackRate).toBeCloseTo(1.03);
+    expect(observed.latencies).toHaveLength(1);
+    expect(observed.latencies[0]).toBeGreaterThanOrEqual(0);
+    expect(onStarted).toHaveBeenCalledOnce();
+
+    audio.emit("ended");
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "ready", action: "replay" });
+    expect(observed.playback).toEqual([
+      { type: "started", durationMs: 3883, phraseBoundariesMs: [] },
+      { type: "completed" },
+    ]);
+    expect(revoke).toHaveBeenCalledWith("blob:test");
+  });
+
+  it("stops active playback while retaining audio for replay", async () => {
+    const audio = new FakeAudio();
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway(),
+      observed.callbacks,
+      null,
+      () => audio,
+      { createObjectURL: () => "blob:test", revokeObjectURL: vi.fn() },
+    );
+
+    controller.speak("停止テスト");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    controller.toggle();
+
+    expect(audio.pause).toHaveBeenCalledOnce();
+    expect(audio.currentTime).toBe(0);
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "stopped", action: "replay" });
+    expect(observed.playback.at(-1)).toEqual({ type: "stopped" });
+  });
+
+  it("keeps generated audio replayable when browser autoplay is blocked", async () => {
+    const blockedAudio = new FakeAudio(async () => {
+      throw new DOMException("blocked", "NotAllowedError");
+    });
+    const replayAudio = new FakeAudio();
+    const audios = [blockedAudio, replayAudio];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway(),
+      observed.callbacks,
+      null,
+      () => audios.shift() ?? replayAudio,
+      { createObjectURL: () => "blob:test", revokeObjectURL: vi.fn() },
+    );
+
+    controller.speak("自動再生テスト");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("ready"));
+    expect(observed.statuses.at(-1)?.action).toBe("replay");
+    expect(observed.statuses.at(-1)?.reason).toBe("autoplay-blocked");
+    const statusesAfterBlocked = observed.statuses.length;
+    const playbackAfterBlocked = observed.playback.length;
+    // Revoking the rejected media URL can deliver an error after cleanup.
+    blockedAudio.emit("error");
+    blockedAudio.emit("ended");
+    expect(observed.statuses).toHaveLength(statusesAfterBlocked);
+    expect(observed.playback).toHaveLength(playbackAfterBlocked);
+    expect(observed.statuses.at(-1)?.reason).toBe("autoplay-blocked");
+
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    expect(replayAudio.play).toHaveBeenCalledOnce();
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    replayAudio.emit("ended");
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "ready", action: "replay" });
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.dispose();
+  });
+
+  it("ignores late events from stopped audio but reports errors from the current replay", async () => {
+    const firstAudio = new FakeAudio();
+    const replayAudio = new FakeAudio();
+    const audios = [firstAudio, replayAudio];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks, null,
+      () => audios.shift() ?? replayAudio, { createObjectURL: () => "blob:events", revokeObjectURL: vi.fn() });
+    controller.speak("音声イベントを確認します。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    controller.stop();
+    const statusesAfterStop = observed.statuses.length;
+    firstAudio.emit("error");
+    firstAudio.emit("ended");
+    expect(observed.statuses).toHaveLength(statusesAfterStop);
+    expect(observed.statuses.at(-1)?.state).toBe("stopped");
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    const statusesDuringReplay = observed.statuses.length;
+    firstAudio.emit("error");
+    expect(observed.statuses).toHaveLength(statusesDuringReplay);
+    replayAudio.emit("error");
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "error", action: "replay" });
+    expect(observed.playback.at(-1)).toEqual({ type: "failed" });
+    expect(observed.warnings.at(-1)).toBe("音声の再生中にエラーが発生しました。");
+    const statusesAfterFailure = observed.statuses.length;
+    replayAudio.emit("ended");
+    expect(observed.statuses).toHaveLength(statusesAfterFailure);
+    controller.dispose();
+  });
+
+  it("marks streaming autoplay rejection and clears its reason after explicit playback recovers", async () => {
+    const blockedAudio = new FakeAudio(async () => { throw new DOMException("blocked", "NotAllowedError"); });
+    const replayAudio = new FakeAudio();
+    const audios = [blockedAudio, replayAudio];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks, null,
+      () => audios.shift() ?? replayAudio, { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() });
+    controller.beginStreaming();
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.appendStreamingText("自動再生を確認します。");
+    controller.completeStreaming("自動再生を確認します。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)).toMatchObject({
+      state: "ready", action: "replay", reason: "autoplay-blocked",
+    }));
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    replayAudio.emit("ended");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("ready"));
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.dispose();
+  });
+
+  it("does not label an explicit replay failure as autoplay blocked", async () => {
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(createGateway(), observed.callbacks, null,
+      () => new FakeAudio(async () => { throw new DOMException("blocked", "NotAllowedError"); }),
+      { createObjectURL: () => "blob:blocked", revokeObjectURL: vi.fn() });
+    controller.speak("自動再生を確認します。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.reason).toBe("autoplay-blocked"));
+    controller.toggle();
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("error"));
+    expect(observed.statuses.at(-1)).not.toHaveProperty("reason");
+    controller.dispose();
+  });
+
+  it("reports synthesis failure without throwing away the text flow", async () => {
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async () => {
+          throw new SpeechApiError("VOICEVOXを起動してください。", 503, "voicevox_unreachable");
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => new FakeAudio(),
+      { createObjectURL: () => "blob:test", revokeObjectURL: vi.fn() },
+    );
+
+    controller.speak("失敗テスト");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("error"));
+
+    expect(observed.statuses.at(-1)?.message).toContain("Text回答はそのまま確認できます。");
+    expect(observed.warnings).toEqual(["VOICEVOXを起動してください。"]);
+    expect(observed.playback.at(-1)).toEqual({ type: "failed" });
+  });
+
+  it("prepares, starts, and stops lip sync with the audio lifecycle", async () => {
+    const audio = new FakeAudio();
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn(async () => true),
+      start: vi.fn(() => true),
+      stop: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const controller = new SpeechController(
+      createGateway(),
+      observed.callbacks,
+      lipSync,
+      () => audio,
+      { createObjectURL: () => "blob:test", revokeObjectURL: vi.fn() },
+    );
+
+    controller.speak("Lip Syncテスト");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    expect(lipSync.prepare).toHaveBeenCalledWith(expect.any(Blob), null);
+    expect(lipSync.start).toHaveBeenCalledWith(audio);
+
+    audio.emit("ended");
+    expect(lipSync.stop).toHaveBeenCalled();
+    controller.dispose();
+    expect(lipSync.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a whole-reply speech during lip-sync preparation without starting late audio", async () => {
+    const waiting = deferredBoolean();
+    const audio = new FakeAudio();
+    const createAudio = vi.fn(() => audio);
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn().mockReturnValueOnce(waiting.promise).mockResolvedValue(true),
+      start: vi.fn(() => true), stop: vi.fn(), dispose: vi.fn(),
+    };
+    const controller = new SpeechController(createGateway(), observed.callbacks, lipSync, createAudio, {
+      createObjectURL: () => "blob:late", revokeObjectURL: vi.fn(),
+    });
+    controller.speak("切り替える前の返答");
+    await vi.waitFor(() => expect(lipSync.prepare).toHaveBeenCalledOnce());
+    controller.stop();
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "stopped", action: "none" });
+    waiting.resolve(true);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    expect(createAudio).not.toHaveBeenCalled();
+    expect(lipSync.start).not.toHaveBeenCalled();
+    controller.speak("新しい返答");
+    await vi.waitFor(() => expect(audio.play).toHaveBeenCalledOnce());
+    controller.dispose();
+  });
+
+  it("cancels a streaming sentence during lip-sync preparation", async () => {
+    const waiting = deferredBoolean();
+    const createAudio = vi.fn(() => new FakeAudio());
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn(() => waiting.promise), start: vi.fn(() => true), stop: vi.fn(), dispose: vi.fn(),
+    };
+    const controller = new SpeechController(createGateway(), observed.callbacks, lipSync, createAudio, {
+      createObjectURL: () => "blob:late", revokeObjectURL: vi.fn(),
+    });
+    controller.beginStreaming();
+    controller.appendStreamingText("準備中の文です。");
+    controller.completeStreaming("準備中の文です。");
+    await vi.waitFor(() => expect(lipSync.prepare).toHaveBeenCalledOnce());
+    controller.stop();
+    waiting.resolve(true);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    expect(createAudio).not.toHaveBeenCalled();
+    expect(observed.statuses.at(-1)?.state).toBe("stopped");
+    controller.dispose();
+  });
+
+  it("cancels a streaming replay during lip-sync preparation and permits a later explicit replay", async () => {
+    const waiting = deferredBoolean();
+    const audios: FakeAudio[] = [];
+    const observed = createObservedCallbacks();
+    const lipSync: LipSyncOutput = {
+      prepare: vi.fn().mockResolvedValueOnce(true).mockReturnValueOnce(waiting.promise).mockResolvedValue(true),
+      start: vi.fn(() => true), stop: vi.fn(), dispose: vi.fn(),
+    };
+    const controller = new SpeechController(createGateway(), observed.callbacks, lipSync, () => {
+      const audio = new FakeAudio(); audios.push(audio); return audio;
+    }, { createObjectURL: () => "blob:replay", revokeObjectURL: vi.fn() });
+    controller.beginStreaming();
+    controller.appendStreamingText("再生済みの文です。");
+    controller.completeStreaming("再生済みの文です。");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    audios[0]?.emit("ended");
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("ready"));
+    controller.toggle();
+    await vi.waitFor(() => expect(lipSync.prepare).toHaveBeenCalledTimes(2));
+    controller.stop();
+    waiting.resolve(true);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    expect(audios).toHaveLength(1);
+    expect(observed.statuses.at(-1)).toMatchObject({ state: "stopped", action: "replay" });
+    controller.toggle();
+    await vi.waitFor(() => expect(audios).toHaveLength(2));
+    expect(audios[1]?.play).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+
+  it("synthesizes and plays a closed sentence before the final reply arrives", async () => {
+    const firstAudio = new FakeAudio(undefined, 1.5);
+    const secondAudio = new FakeAudio(undefined, 1.2);
+    const audios = [firstAudio, secondAudio];
+    const synthesized: string[] = [];
+    const observed = createObservedCallbacks();
+    const onStarted = vi.fn();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async (text) => {
+          synthesized.push(text);
+          return { audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing: null };
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => audios.shift() ?? secondAudio,
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming(onStarted);
+    controller.appendStreamingText("最初の文です");
+    expect(synthesized).toEqual([]);
+    controller.appendStreamingText("。続き");
+
+    await vi.waitFor(() => expect(firstAudio.play).toHaveBeenCalledOnce());
+    expect(synthesized).toEqual(["最初の文です。"]);
+    expect(onStarted).toHaveBeenCalledOnce();
+    expect(observed.playback).toEqual([]);
+
+    controller.completeStreaming("最初の文です。続き", {
+      emotion: "happy",
+      intensity: 0.5,
+      gesture: "soft_bounce",
+      voice_style: "bright",
+      cues: [],
+    });
+    expect(observed.playback[0]).toMatchObject({ type: "started" });
+    firstAudio.emit("ended");
+
+    await vi.waitFor(() => expect(secondAudio.play).toHaveBeenCalledOnce());
+    expect(synthesized).toEqual(["最初の文です。", "続き"]);
+    expect(secondAudio.playbackRate).toBeCloseTo(1.03);
+    secondAudio.emit("ended");
+
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.action).toBe("replay"));
+    expect(observed.playback.at(-1)).toEqual({ type: "completed" });
+  });
+
+  it("aborts provisional synthesis and discards replay data", async () => {
+    let synthesisSignal: AbortSignal | undefined;
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async (_text, signal) => {
+          synthesisSignal = signal;
+          return await new Promise<SpeechSynthesisResult>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => new FakeAudio(),
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming();
+    controller.appendStreamingText("破棄する文です。");
+    await vi.waitFor(() => expect(synthesisSignal).toBeDefined());
+
+    controller.discard();
+
+    expect(synthesisSignal?.aborted).toBe(true);
+    controller.toggle();
+    expect(observed.playback).toEqual([]);
+  });
+
+  it("fails the streaming speech queue without failing the text response", async () => {
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async () => {
+          throw new SpeechApiError("VOICEVOXを起動してください。", 503, "voicevox_unreachable");
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => new FakeAudio(),
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming();
+    controller.appendStreamingText("音声だけ失敗します。");
+
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("error"));
+    expect(observed.statuses.at(-1)?.message).toContain("Text回答はそのまま確認できます");
+    expect(observed.warnings).toEqual(["VOICEVOXを起動してください。"]);
+    expect(observed.playback.at(-1)).toEqual({ type: "failed" });
+  });
+
+  it("falls back to the validated full reply when streamed text differs", async () => {
+    const provisionalAudio = new FakeAudio();
+    const finalAudio = new FakeAudio();
+    const audios = [provisionalAudio, finalAudio];
+    const synthesized: string[] = [];
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async (text) => {
+          synthesized.push(text);
+          return { audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing: null };
+        },
+      }),
+      observed.callbacks,
+      null,
+      () => audios.shift() ?? finalAudio,
+      { createObjectURL: () => "blob:stream", revokeObjectURL: vi.fn() },
+    );
+
+    controller.beginStreaming();
+    controller.appendStreamingText("途中の文です。");
+    await vi.waitFor(() => expect(provisionalAudio.play).toHaveBeenCalledOnce());
+
+    controller.completeStreaming("確定した文です。", {
+      emotion: "neutral",
+      intensity: 0.3,
+      gesture: "none",
+      voice_style: "neutral",
+      cues: [],
+    });
+
+    await vi.waitFor(() => expect(finalAudio.play).toHaveBeenCalledOnce());
+    expect(provisionalAudio.pause).toHaveBeenCalled();
+    expect(synthesized).toEqual(["途中の文です。", "確定した文です。"]);
+    expect(observed.warnings.at(-1)).toContain("途中表示と確定した本文が一致しなかった");
+  });
+});
+
+describe("speech duration", () => {
+  it("uses media duration when available and a bounded Japanese-text estimate otherwise", () => {
+    expect(resolveSpeechDurationMs(4, "短文", 2)).toBe(2000);
+    expect(resolveSpeechDurationMs(Number.NaN, "短文", 2, 4000)).toBe(2000);
+    expect(resolveSpeechDurationMs(Number.NaN, "こんにちは。", 1)).toBe(1000);
+    expect(resolveSpeechDurationMs(9999, "長文", 1)).toBe(300_000);
+  });
+
+  it("scales phrase boundaries to the actual playback rate", async () => {
+    const timing: SpeechTiming = {
+      durationMs: 4000,
+      phraseBoundariesMs: [1200, 2600],
+      visemes: [{ viseme: "a", startMs: 100, durationMs: 300 }],
+    };
+    const audio = new FakeAudio(undefined, Number.NaN);
+    const observed = createObservedCallbacks();
+    const controller = new SpeechController(
+      createGateway({
+        synthesize: async () => ({ audio: new Blob([WAV_BYTES], { type: "audio/wav" }), timing }),
+      }),
+      observed.callbacks,
+      null,
+      () => audio,
+      { createObjectURL: () => "blob:test", revokeObjectURL: vi.fn() },
+    );
+
+    controller.speak("境界テスト", {
+      emotion: "happy",
+      intensity: 0.5,
+      gesture: "soft_bounce",
+      voice_style: "bright",
+      cues: [],
+    });
+    await vi.waitFor(() => expect(observed.statuses.at(-1)?.state).toBe("playing"));
+    expect(observed.playback[0]).toEqual({
+      type: "started",
+      durationMs: 3883,
+      phraseBoundariesMs: [1165, 2524],
+    });
+  });
+});
