@@ -72,7 +72,7 @@ PR #20の初版 `94012d8` からの追加調整。760px以下の「音声未接�
 
 | 更新前：PR #18の画面 | 更新後：PR #20の画面 |
 | --- | --- |
-| ![旧README画像](https://raw.githubusercontent.com/yutoo77/adaptive-vrm-dialogue-agent/94012d8024f12bac61f9d8fb362443e43f9a10f7/docs/assets/demo-overview.jpg) | ![最新README画像](../assets/demo-overview.jpg) |
+| ![旧README画像](https://raw.githubusercontent.com/yutoo77/adaptive-vrm-dialogue-agent/94012d8024f12bac61f9d8fb362443e43f9a10f7/docs/assets/demo-overview.jpg) | ![この追補時点のREADME画像](https://raw.githubusercontent.com/yutoo77/adaptive-vrm-dialogue-agent/b1437443d1d035dae194e545a3e920fc453448d7/docs/assets/demo-overview.jpg) |
 
 1440×900の実アプリで「こんばんは。」「名前を教えて。」「さっき、何を聞いたっけ？」の3往復を送信した。BackendはMock、長期記憶は撮影専用のメモリ内DB。個人の会話・記憶は使わず、外部リクエストも0件。VOICEVOX Engine 0.25.2 / 冥鳴ひまり・ノーマル（ID 14）へ正常接続した。
 

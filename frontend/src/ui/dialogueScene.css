@@ -325,17 +325,30 @@
   pointer-events: auto;
 }
 
+#dialogue-workspace .composer-surface {
+  border: 1px solid #b2bdd1;
+  border-radius: 7px;
+  background: rgb(251 251 254 / 98%);
+  box-shadow: 0 6px 20px rgb(19 27 42 / 18%);
+}
+
+#dialogue-workspace .composer-surface:focus-within {
+  border-color: #94a9d4;
+  box-shadow: 0 0 0 2px #a4b5d9, 0 6px 20px rgb(19 27 42 / 18%);
+}
+
 #dialogue-workspace .composer-tools {
-  min-height: 0;
+  min-height: 44px;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin-bottom: 5px;
+  margin: 0;
+  padding: 0 5px;
 }
 
 #dialogue-workspace .response-style-control,
 #dialogue-workspace .speech-control {
   color: #243651;
-  background: rgb(246 248 254 / 95%);
+  background: transparent;
   border-radius: 5px;
 }
 
@@ -344,22 +357,26 @@
 }
 
 #dialogue-workspace .response-style-control select {
-  min-height: 38px;
+  min-height: 44px;
   background: transparent;
 }
 
+#dialogue-workspace .speech-control {
+  min-height: 44px;
+}
+
 #dialogue-workspace .dialogue-form {
+  min-width: 0;
   gap: 6px;
-  padding: 5px;
-  border: 1px solid #b2bdd1;
-  border-radius: 7px;
-  background: rgb(251 251 254 / 98%);
-  box-shadow: 0 6px 20px rgb(19 27 42 / 18%);
+  padding: 0 5px 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 #dialogue-workspace .dialogue-form:focus-within {
-  border-color: #94a9d4;
-  box-shadow: 0 0 0 2px #a4b5d9, 0 6px 20px rgb(19 27 42 / 18%);
+  box-shadow: none;
 }
 
 #dialogue-workspace .dialogue-input {

@@ -98,6 +98,7 @@ export function createAppMarkup(): string {
             <span id="dialogue-memory" hidden>直近 0 / 10往復（RAM）</span>
             <div id="dialogue-presentation"></div>
             <div class="composer">
+            <div class="composer-surface">
             <div class="composer-tools">
               <label class="response-style-control" for="response-style-select">
                 <span>話し方</span>
@@ -126,6 +127,7 @@ export function createAppMarkup(): string {
               </button>
               <button id="dialogue-submit" class="send-button" type="submit" data-mode="send" aria-label="送信" title="送信" disabled>${icon("send")}</button>
             </form>
+            </div>
             <p id="composer-hint" class="composer-hint">Enterで送信<span aria-hidden="true"> · </span>Shift + Enterで改行</p>
             <p id="dialogue-error" class="dialogue-error" role="alert" hidden></p>
             <div id="voice-input-status" class="voice-input-status" data-voice-input-state="checking" role="status">
